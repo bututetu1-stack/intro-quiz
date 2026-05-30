@@ -644,7 +644,7 @@
 <div id="page-lists" class="page">
   <div class="container">
     <div class="section-title">SONG LISTS</div>
-    <div class="section-desc">公開リストは全員に共有されます。個人様リストはあなただけに表示されます。</div>
+    <div class="section-desc">公開リストは全員に共有されます。個人用リストはあなただけに表示されます。</div>
     <div class="actions-right" style="margin-bottom:18px;"><button class="btn-primary" onclick="openListModal()">+ 新しいリスト</button></div>
     <div id="lists-grid" class="list-grid"></div>
   </div>
@@ -768,12 +768,31 @@
 <div class="modal-overlay" id="list-modal">
   <div class="modal">
     <div class="modal-title">新しい曲リスト</div>
-    <div class="modal-text">公開リストは全員に共有。個人様リストは自分だけに表示されます。</div>
+    <div class="modal-text">公開リストは全員に共有。個人用リストは自分だけに表示されます。</div>
     <div class="form-group"><label class="form-label">リスト名</label><input class="form-input" id="new-list-name" type="text" maxlength="30" placeholder="例: 2010年代J-POP縛り"></div>
     <div class="form-group"><label class="form-label">公開設定</label>
-      <select class="form-select" id="new-list-visibility"><option value="public">🌐 公開（全員に共有）</option><option value="personal">🔒 個人様（自分だけ）</option></select>
+      <select class="form-select" id="new-list-visibility"><option value="public">🌐 公開（全員に共有）</option><option value="personal">🔒 個人用（自分だけ）</option></select>
     </div>
     <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('list-modal')">キャンセル</button><button class="btn-go" onclick="createList()">作成</button></div>
+  </div>
+</div>
+
+<!-- モーダル：曲を編集 -->
+<div class="modal-overlay" id="edit-song-modal">
+  <div class="modal">
+    <div class="modal-title">曲を編集</div>
+    <div class="form-group"><label class="form-label">表示タイトル（任意）</label><input class="form-input" id="edit-song-title" type="text" placeholder="空欄なら最初の正解を使用"></div>
+    <div class="form-group"><label class="form-label">正解の曲名（1行に1つ）</label><textarea class="form-input" id="edit-song-answers" rows="3" placeholder="正解1&#10;正解2"></textarea></div>
+    <div class="form-group"><label class="form-label">よみがな（1行に1つ・任意）</label><textarea class="form-input" id="edit-song-yomi" rows="2" placeholder="ひらがな"></textarea></div>
+    <div class="form-group"><label class="form-label">ジャンル</label>
+      <select class="form-select" id="edit-song-genre">
+        <option value="">未分類</option><option value="J-POP">J-POP</option><option value="アニメ">アニメ</option>
+        <option value="ゲーム">ゲーム</option><option value="洋楽">洋楽</option><option value="K-POP">K-POP</option>
+        <option value="ボカロ">ボカロ</option><option value="その他">その他</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">サビ開始秒（任意・空欄で自動検出）</label><input class="form-input" id="edit-song-chorus" type="number" min="0" placeholder="例: 45"></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('edit-song-modal')">キャンセル</button><button class="btn-go" onclick="saveSongEdit()">保存</button></div>
   </div>
 </div>
 
@@ -943,7 +962,7 @@ function openListDetail(id){
   currentListId=id;
   const editable = list.ownerUuid===getUser().uuid;
   document.getElementById('detail-list-name').textContent=list.name;
-  document.getElementById('detail-list-meta').textContent=`${list.visibility==='public'?'🌐 公開':'🔒 個人様'} ・ by ${list.ownerName||'?'}`;
+  document.getElementById('detail-list-meta').textContent=`${list.visibility==='public'?'🌐 公開':'🔒 個人用'} ・ by ${list.ownerName||'?'}`;
   document.getElementById('add-song-card').style.display=editable?'':'none';
   document.getElementById('bulk-card').style.display=editable?'':'none';
   document.getElementById('playlist-card').style.display=editable?'':'none';
@@ -1049,6 +1068,33 @@ function deleteSong(songId){
   list.songs=(list.songs||[]).filter(s=>s.id!==songId);
   saveListToCloud(list).then(()=>showToast('曲を削除しました','success'));
 }
+let editSongId=null;
+function openEditSong(songId){
+  const list=getList(currentListId); if(!list) return;
+  const s=(list.songs||[]).find(x=>x.id===songId); if(!s) return;
+  editSongId=songId;
+  document.getElementById('edit-song-title').value=s.title||'';
+  document.getElementById('edit-song-answers').value=(s.answers||[]).join('\n');
+  document.getElementById('edit-song-yomi').value=(s.yomigana||[]).join('\n');
+  document.getElementById('edit-song-genre').value=s.genre||'';
+  document.getElementById('edit-song-chorus').value=(s.chorusStart!=null)?s.chorusStart:'';
+  openModal('edit-song-modal');
+}
+function saveSongEdit(){
+  const list=getList(currentListId); if(!list||!editSongId) return;
+  const s=(list.songs||[]).find(x=>x.id===editSongId); if(!s) return;
+  const answers=document.getElementById('edit-song-answers').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  if(answers.length===0){ showToast('正解を1つ以上入力してください','error'); return; }
+  const yomi=document.getElementById('edit-song-yomi').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  const title=document.getElementById('edit-song-title').value.trim();
+  const chorusRaw=document.getElementById('edit-song-chorus').value.trim();
+  s.title=title||answers[0];
+  s.answers=answers;
+  s.yomigana=yomi;
+  s.genre=document.getElementById('edit-song-genre').value;
+  s.chorusStart=(chorusRaw==='')?null:Number(chorusRaw);
+  saveListToCloud(list).then(()=>{ closeModal('edit-song-modal'); editSongId=null; showToast('曲を更新しました','success'); });
+}
 function confirmDeleteList(){
   const list=getList(currentListId);
   openConfirm('リストを削除しますか？',`「${list.name}」と中の${(list.songs||[]).length}曲が削除されます。`,()=>{
@@ -1061,7 +1107,7 @@ function renderLists(){
   if(lists.length===0){ grid.innerHTML='<div class="empty-list" style="grid-column:1/-1;">まだリストがありません。「+ 新しいリスト」から作成してください。</div>'; return; }
   grid.innerHTML=lists.map(l=>{
     const mine=l.ownerUuid===me;
-    const visBadge=l.visibility==='public'?'<span class="badge badge-public">🌐 公開</span>':'<span class="badge badge-personal">🔒 個人様</span>';
+    const visBadge=l.visibility==='public'?'<span class="badge badge-public">🌐 公開</span>':'<span class="badge badge-personal">🔒 個人用</span>';
     const mineBadge=mine?'<span class="badge badge-mine">自分</span>':'';
     return `<div class="list-card" onclick="openListDetail('${l.id}')"><div class="list-badges">${visBadge}${mineBadge}</div><div class="list-card-name">${escHtml(l.name)}</div><div class="list-card-meta">${(l.songs||[]).length} 曲 ・ by ${escHtml(l.ownerName||'?')}</div></div>`;
   }).join('');
@@ -1082,7 +1128,7 @@ function renderDetailSongs(){
         <a class="song-title song-link" href="${escAttr(s.url)}" target="_blank" rel="noopener" title="元の動画を開く">${escHtml(s.title)} ↗</a>
         <div class="song-sub">${escHtml(sub)}</div>
       </div>
-      <div class="song-meta">${s.genre?`<span class="q-tag">${escHtml(s.genre)}</span>`:''}${editable?`<button class="song-del" onclick="deleteSong('${s.id}')">✕</button>`:''}</div>
+      <div class="song-meta">${s.genre?`<span class="q-tag">${escHtml(s.genre)}</span>`:''}${editable?`<button class="song-del" onclick="openEditSong('${s.id}')" title="編集">✎</button><button class="song-del" onclick="deleteSong('${s.id}')">✕</button>`:''}</div>
     </div>`;
   }).join('');
 }
@@ -1417,41 +1463,61 @@ function cleanupMatch(){
   try{ matchPlayer && matchPlayer.stopVideo(); }catch(e){}
   matchLocal={ idx:-1, buzzSent:false, answered:false, elapsed:null, chorusPlayed:false };
   if(chorusStopTimer){ clearTimeout(chorusStopTimer); chorusStopTimer=null; }
+  if(chorusFadeInt){ clearInterval(chorusFadeInt); chorusFadeInt=null; }
+  try{ matchPlayer && matchPlayer.setVolume(100); }catch(e){}
   if(arbitrateTimer){ clearTimeout(arbitrateTimer); arbitrateTimer=null; } arbitrateKey=null;
   if(answererTimer){ clearTimeout(answererTimer); answererTimer=null; }
   if(buzzCountdownInt){ clearInterval(buzzCountdownInt); buzzCountdownInt=null; }
   matchPlaying=false; matchSongStart=null; matchStarted=false; matchEnded=false;
 }
 
-let chorusStopTimer=null;
+let chorusStopTimer=null, chorusFadeInt=null;
+const CHORUS_MS=15000, CHORUS_FADE_MS=1500;
 function matchDuration(){ try{ return matchPlayer&&matchPlayer.getDuration?matchPlayer.getDuration():0; }catch(e){ return 0; } }
+function clearChorusFade(){ if(chorusFadeInt){ clearInterval(chorusFadeInt); chorusFadeInt=null; } }
 function playMatchChorus(videoId, startSecs){
   if(matchTimerInt){ clearInterval(matchTimerInt); matchTimerInt=null; } // 再生位置監視を止める
   if(chorusStopTimer) clearTimeout(chorusStopTimer);
+  clearChorusFade();
   setAudioCover(true,'♪ サビ再生中...');
-  ensureMatchPlayer(()=>{ try{ matchPlayer.loadVideoById({ videoId, startSeconds:Math.max(0,startSecs) }); matchPlayer.playVideo(); }catch(e){} });
+  ensureMatchPlayer(()=>{ try{
+    matchPlayer.setVolume(0);
+    matchPlayer.loadVideoById({ videoId, startSeconds:Math.max(0,startSecs) });
+    matchPlayer.playVideo();
+    let v=0; clearChorusFade();
+    chorusFadeInt=setInterval(()=>{ v+=8; try{ matchPlayer.setVolume(Math.min(100,v)); }catch(e){} if(v>=100) clearChorusFade(); }, CHORUS_FADE_MS/12);
+  }catch(e){} });
   chorusStopTimer=setTimeout(()=>{
-    try{ matchPlayer.pauseVideo(); }catch(e){}
-    setAudioCover(false,'⏹ サビ再生終了');
-  },15000);
+    clearChorusFade();
+    let v=100;
+    chorusFadeInt=setInterval(()=>{
+      v-=8; try{ matchPlayer.setVolume(Math.max(0,v)); }catch(e){}
+      if(v<=0){ clearChorusFade(); try{ matchPlayer.pauseVideo(); matchPlayer.setVolume(100); }catch(e){} setAudioCover(false,'⏹ サビ再生終了'); }
+    }, CHORUS_FADE_MS/12);
+  }, CHORUS_MS-CHORUS_FADE_MS);
 }
 
 // ===== サビ開始秒の決定（手動 → ゲーム内自動値 → キャッシュ → プロキシ取得 → フォールバック） =====
 // 注意: CORS_PROXIES は外部サービス依存。障害やYouTubeのHTML仕様変更で自動検出が壊れる可能性あり（手動入力で救済可能）
 const CORS_PROXIES=['https://api.allorigins.win/raw?url=','https://corsproxy.io/?url='];
 async function ensureChorusAndPlay(id, room, idx){
+  if(matchLocal.chorusPlayed) return;
   const g=room.game; const q=g.questions[idx];
-  if(q.chorusStart!=null && q.chorusStart>=0){ playMatchChorus(q.videoId, Number(q.chorusStart)); return; } // 手動
-  if(q.chorusAuto!=null && q.chorusAuto>=0){ playMatchChorus(q.videoId, Number(q.chorusAuto)); return; }   // 既出の自動値
-  const isHost=room.hostUuid===getUser().uuid;
-  let start=await getCachedChorus(q.videoId);
-  if(start==null && isHost){
-    start=await fetchChorusStart(q.videoId);                 // プロキシ取得（ホストのみ）
-    if(start==null){ const d=matchDuration(); if(d>20) start=Math.min(d*0.4, d-15); } // フォールバック：中間あたり
-    if(start!=null){ setCachedChorus(q.videoId, start); db.ref(`rooms/${id}/game/questions/${idx}/chorusAuto`).set(start); }
+  try{ matchPlayer && matchPlayer.pauseVideo(); }catch(e){} // 本編は確実に止める
+  let start=null;
+  if(q.chorusStart!=null && q.chorusStart>=0) start=Number(q.chorusStart);          // 手動
+  else if(q.chorusAuto!=null && q.chorusAuto>=0) start=Number(q.chorusAuto);         // 既出の自動値
+  else {
+    start=await getCachedChorus(q.videoId);
+    const isHost=room.hostUuid===getUser().uuid;
+    if(start==null && isHost){
+      start=await fetchChorusStart(q.videoId);                 // プロキシ取得（ホストのみ）
+      if(start==null){ const d=matchDuration(); start=(d>20)?Math.min(d*0.4, d-15):0; } // フォールバック：中間あたり
+      if(start!=null){ setCachedChorus(q.videoId, start); db.ref(`rooms/${id}/game/questions/${idx}/chorusAuto`).set(start); }
+    }
   }
-  if(start!=null && start>=0){ playMatchChorus(q.videoId, start); }
-  else if(!isHost){ matchLocal.chorusPlayed=false; } // ホストの自動値が届いたら次のrenderRevealで再生
+  if(start!=null && start>=0){ matchLocal.chorusPlayed=true; playMatchChorus(q.videoId, start); }
+  // 非ホストで自動値未取得なら待つ（ホストの値が届いたら次のrenderRevealで再生）
 }
 function getCachedChorus(videoId){
   return db.ref('chorusCache/'+videoId).once('value').then(s=>{ const v=s.val(); return (typeof v==='number')?v:null; }).catch(()=>null);
@@ -1561,6 +1627,8 @@ function renderMatch(id, room){
     waitEl.style.display=''; waitEl.textContent='🔔 早押し！ 判定待ち...';
   } else {
     ansWrap.style.display='none'; waitEl.style.display='none'; buzzBtn.style.display='';
+    // 再生開始イベントを取りこぼしても、再生中なら押せるようにする（回答ボタンが出ない不具合の対策）
+    if(!matchStarted && matchPlaying){ matchStarted=true; if(!matchTimerInt) matchTimerInt=setInterval(matchPlayTick,100); }
     if(lockUntil>now){
       buzzBtn.disabled=true;
       const upd=()=>{ const rem=(lockUntil-Date.now())/1000; if(rem<=0){ if(buzzCountdownInt){clearInterval(buzzCountdownInt);buzzCountdownInt=null;} buzzBtn.disabled=false; buzzBtn.textContent='🔔 早押し！'; } else { buzzBtn.textContent=`⏳ ${rem.toFixed(1)} 秒ペナルティ`; } };
@@ -1807,11 +1875,12 @@ function renderReveal(id, room){
 
   renderStandings('reveal-standings', room, false);
 
-  // サビ再生
+  // サビ再生（時間切れ・正解どちらでも。本編は必ず止める）
   const settings=room.settings||{};
-  if(settings.chorusOn && !matchLocal.chorusPlayed){
-    matchLocal.chorusPlayed=true;
+  if(settings.chorusOn){
     ensureChorusAndPlay(id, room, idx);
+  } else {
+    try{ matchPlayer && matchPlayer.pauseVideo(); }catch(e){}
   }
 
   const isHost=room.hostUuid===getUser().uuid;
