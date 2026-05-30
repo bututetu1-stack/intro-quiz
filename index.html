@@ -312,6 +312,11 @@
   .uuid-restore summary::-webkit-details-marker { display:none; }
   .uuid-restore summary::before { content:'▸ '; }
   .uuid-restore[open] summary::before { content:'▾ '; }
+  .song-log-row { display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--color-border); font-size:13px; flex-wrap:wrap; }
+  .song-log-row:last-child { border-bottom:none; }
+  .song-log-num { font-family:var(--font-display); font-size:20px; color:var(--color-accent); width:32px; text-align:center; flex-shrink:0; }
+  .song-log-title { flex:1; font-weight:700; }
+  .song-log-winner { font-size:12px; color:var(--color-correct); }
 </style>
 </head>
 <body>
@@ -401,7 +406,7 @@
           <span class="code-text" id="lobby-code">------</span>
           <button class="btn-sub" onclick="copyCode()" style="padding:8px 14px; font-size:12px;">コピー</button>
         </div>
-        <div class="form-hint" style="margin-top:8px;">この部屋は非公開です。上の合言葉を知っている人だけが参加できます。</div>
+        <div class="form-hint" id="lobby-code-hint" style="margin-top:8px;">この部屋は非公開です。上の合言葉を知っている人だけが参加できます。</div>
       </div>
       <div class="form-hint" id="lobby-public-hint" style="display:none;">🌐 この部屋は公開中です。合言葉は不要で、「対戦」一覧から誰でも参加できます。</div>
     </div>
@@ -421,6 +426,10 @@
           <span style="font-size:13px;" id="yaminabe-label">OFF</span>
         </div>
         <div class="form-hint">ONにすると、参加者全員が見られる全リストの曲が対象になります（リスト選択は無視）。</div>
+        <div class="form-group" id="yaminabe-genre-group" style="display:none; margin-top:10px; margin-bottom:0;">
+          <label class="form-label">ジャンル絞り込み（全リストから）</label>
+          <select class="form-select" id="set-yaminabe-genre"></select>
+        </div>
       </div>
       <div class="form-group" id="set-list-group">
         <label class="form-label">流す曲リスト</label>
@@ -461,6 +470,24 @@
         <div class="form-hint" style="margin-top:8px;">通常の正解は +1 点。上記はハンデ補正です。（Phase4で対戦に反映）</div>
       </div>
 
+      <div class="form-group">
+        <label class="form-label">サビ再生（時間切れ・正解後に自動でサビを再生）</label>
+        <div class="toggle-switch" onclick="toggleChorus()">
+          <div class="toggle-track" id="chorus-track"><div class="toggle-knob"></div></div>
+          <span style="font-size:13px;" id="chorus-label">OFF</span>
+        </div>
+        <div class="form-hint">ONにするとサビを自動再生。曲ごとに「サビ開始時間（秒）」の設定が必要です。</div>
+      </div>
+      <div class="row2">
+        <div class="form-group">
+          <label class="form-label">正解ポイント</label>
+          <input class="form-input" id="set-correct-pts" type="number" value="1" min="-10" max="20">
+        </div>
+        <div class="form-group">
+          <label class="form-label">誤答ポイント</label>
+          <input class="form-input" id="set-wrong-pts" type="number" value="0" min="-10" max="10">
+        </div>
+      </div>
       <div class="actions-right">
         <button class="btn-sub" onclick="saveRoomSettings()">設定を保存</button>
         <button class="btn-primary" onclick="hostStartMatch()">対戦を開始</button>
@@ -534,6 +561,8 @@
     <div id="match-finished-view" style="display:none;">
       <div class="result-label" style="text-align:center;">FINAL RESULT</div>
       <div class="stand-list" id="finished-standings" style="margin-top:16px;"></div>
+      <div style="font-size:13px; color:var(--color-muted); margin:20px 0 8px;">📋 出題曲一覧</div>
+      <div class="sub-list" id="match-song-log" style="margin-bottom:20px;"></div>
       <div id="finished-host-actions" style="display:none;">
         <div class="result-actions">
           <button class="btn-sub" style="flex:1;" onclick="hostBackToLobby()">ロビーに戻る</button>
@@ -659,6 +688,11 @@
             <option value="ボカロ">ボカロ</option><option value="その他">その他</option>
           </select>
         </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">サビ開始時間（秒・任意）</label>
+        <input class="form-input" id="f-chorus" type="number" placeholder="例: 62（動画の何秒目からサビを再生するか）" min="0" step="1">
+        <div class="form-hint">時間切れや正解後にサビを再生する位置（秒）。空欄なら再生なし。</div>
       </div>
       <div class="actions-right"><button class="btn-sub" onclick="addSong()" style="border-color:var(--color-accent); color:var(--color-accent);">この曲を追加</button></div>
     </div>
@@ -914,7 +948,8 @@ function openListDetail(id){
 }
 function resetSongForm(){
   document.getElementById('f-url').value=''; document.getElementById('f-title').value='';
-  document.getElementById('f-genre').value=''; document.getElementById('bulk-urls').value='';
+  document.getElementById('f-genre').value=''; document.getElementById('f-chorus').value='';
+  document.getElementById('bulk-urls').value='';
   document.getElementById('answers-list').innerHTML=''; document.getElementById('yomi-list').innerHTML='';
   addMultiRow('answers-list','正解の曲名'); addMultiRow('yomi-list','よみがな（ひらがな）');
 }
@@ -936,8 +971,10 @@ function addSong(){
   if(answers.length===0){ showToast('正解を1つ以上入力してください','error'); return; }
   const videoId=extractVideoId(url); if(!videoId){ showToast('有効なYouTube URLではありません','error'); return; }
   const u=getUser();
+  const chorusRaw=document.getElementById('f-chorus').value;
+  const chorusStart=chorusRaw!==''?Number(chorusRaw):null;
   list.songs=list.songs||[];
-  list.songs.push({ id:genUuid(), addedByUuid:u.uuid, addedByName:u.name, url, videoId, answers, yomigana, title:title||answers[0], genre, createdAt:Date.now() });
+  list.songs.push({ id:genUuid(), addedByUuid:u.uuid, addedByName:u.name, url, videoId, answers, yomigana, title:title||answers[0], genre, chorusStart, createdAt:Date.now() });
   saveListToCloud(list).then(()=>{ resetSongForm(); showToast('曲を追加しました','success'); });
 }
 function bulkAddSongs(){
@@ -1032,7 +1069,7 @@ function renderDetailSongs(){
   document.getElementById('detail-song-count').textContent=`${songs.length} 曲`;
   if(songs.length===0){ el.innerHTML='<div class="empty-list">まだ曲がありません</div>'; return; }
   el.innerHTML=songs.map((s,i)=>{
-    const sub=[ (s.answers||[]).join(' / '), (s.yomigana||[]).length?`よみ: ${s.yomigana.join(' / ')}`:'' ].filter(Boolean).join('　');
+    const sub=[ (s.answers||[]).join(' / '), (s.yomigana||[]).length?`よみ: ${s.yomigana.join(' / ')}`:'' , s.chorusStart!=null?`サビ: ${s.chorusStart}秒`:''].filter(Boolean).join('　');
     const thumb=`https://img.youtube.com/vi/${s.videoId}/mqdefault.jpg`;
     return `<div class="song-row">
       <div class="song-num">${i+1}</div>
@@ -1126,10 +1163,17 @@ function renderLobby(id, room){
   document.getElementById('lobby-room-name').textContent=room.name;
   document.getElementById('lobby-room-meta').textContent=`${room.visibility==='public'?'🌐 公開部屋':'🔒 非公開部屋'} ・ ホスト: ${room.hostName}`;
   const isPrivate = room.visibility==='private';
-  document.getElementById('lobby-code-box-wrap').style.display = isPrivate?'':'none';
-  document.getElementById('lobby-public-hint').style.display = isPrivate?'none':'';
-  document.getElementById('lobby-code-title').textContent = isPrivate?'合言葉（友人に共有）':'公開部屋';
-  if(isPrivate) document.getElementById('lobby-code').textContent = room.passphrase||room.code;
+  document.getElementById('lobby-code-box-wrap').style.display = '';
+  document.getElementById('lobby-public-hint').style.display = 'none';
+  if(isPrivate){
+    document.getElementById('lobby-code-title').textContent = '合言葉（友人に共有）';
+    document.getElementById('lobby-code').textContent = room.passphrase||room.code;
+    const ch=document.getElementById('lobby-code-hint'); if(ch) ch.textContent='この部屋は非公開です。上の合言葉を知っている人だけが参加できます。';
+  } else {
+    document.getElementById('lobby-code-title').textContent = '部屋コード（友人に共有・コードで入室も可）';
+    document.getElementById('lobby-code').textContent = room.code||'------';
+    const ch=document.getElementById('lobby-code-hint'); if(ch) ch.textContent='🌐 公開部屋です。「対戦」一覧からも入室できます。コードを共有すれば直接入室も可能です。';
+  }
 
   const players=room.players?Object.values(room.players):[];
   document.getElementById('lobby-player-count').textContent=`(${players.length}人)`;
@@ -1156,6 +1200,10 @@ function populateHostSettings(s){
   setHandicap(!!s.handicap);
   document.getElementById('hc-owner-miss').value=s.hcOwnerMiss ?? -1;
   document.getElementById('hc-other-hit').value=s.hcOtherHit ?? 2;
+  setChorus(!!s.chorusOn);
+  document.getElementById('set-correct-pts').value = s.correctPts ?? 1;
+  document.getElementById('set-wrong-pts').value = s.wrongPts ?? 0;
+  populateYaminabeGenre(s.yaminabeGenre||'');
 }
 let yaminabeOn=false;
 function setYaminabe(on){
@@ -1164,8 +1212,23 @@ function setYaminabe(on){
   document.getElementById('yaminabe-label').textContent=on?'ON':'OFF';
   document.getElementById('set-list-group').style.display=on?'none':'';
   document.getElementById('set-genre-group').style.display=on?'none':'';
+  document.getElementById('yaminabe-genre-group').style.display=on?'':'none';
+  if(on) populateYaminabeGenre();
 }
 function toggleYaminabe(){ setYaminabe(!yaminabeOn); }
+function populateYaminabeGenre(preset){
+  const genres=[...new Set(visibleLists().flatMap(l=>(l.songs||[]).map(s=>s.genre).filter(Boolean)))].sort();
+  const sel=document.getElementById('set-yaminabe-genre');
+  sel.innerHTML='<option value="">すべてのジャンル</option>'+genres.map(g=>`<option value="${escAttr(g)}">${escHtml(g)}</option>`).join('');
+  if(preset) sel.value=preset;
+}
+let chorusOn=false;
+function setChorus(on){
+  chorusOn=on;
+  document.getElementById('chorus-track').classList.toggle('on',on);
+  document.getElementById('chorus-label').textContent=on?'ON':'OFF';
+}
+function toggleChorus(){ setChorus(!chorusOn); }
 function onSettingListChange(presetGenre){
   const id=document.getElementById('set-list').value; const list=getList(id);
   const gsel=document.getElementById('set-genre');
@@ -1188,9 +1251,13 @@ function saveRoomSettings(){
     genre:document.getElementById('set-genre').value,
     count:parseInt(document.getElementById('set-count').value,10),
     yaminabe:yaminabeOn,
+    yaminabeGenre:yaminabeOn?(document.getElementById('set-yaminabe-genre').value||''):'',
     handicap:handicapOn,
     hcOwnerMiss:parseInt(document.getElementById('hc-owner-miss').value,10)||0,
-    hcOtherHit:parseInt(document.getElementById('hc-other-hit').value,10)||0
+    hcOtherHit:parseInt(document.getElementById('hc-other-hit').value,10)||0,
+    chorusOn,
+    correctPts:parseInt(document.getElementById('set-correct-pts').value,10)||1,
+    wrongPts:parseInt(document.getElementById('set-wrong-pts').value,10)||0
   };
   db.ref(`rooms/${id}/settings`).set(settings).then(()=>showToast('設定を保存しました','success'));
 }
@@ -1202,8 +1269,8 @@ function hostStartMatch(){
   // 出題プールを構築
   let pool=[];
   if(yaminabeOn){
-    // 闇鍋：見られる全リストの曲を集める
-    visibleLists().forEach(l=>{ (l.songs||[]).forEach(s=>pool.push(s)); });
+    const yaminabeGenre=document.getElementById('set-yaminabe-genre').value;
+    visibleLists().forEach(l=>{ (l.songs||[]).forEach(s=>{ if(!yaminabeGenre||s.genre===yaminabeGenre) pool.push(s); }); });
   } else {
     const listId=document.getElementById('set-list').value;
     if(!listId){ showToast('曲リストを選んでください','error'); return; }
@@ -1218,7 +1285,8 @@ function hostStartMatch(){
   if(count>0) pool=pool.slice(0,count);
   const questions=pool.map(s=>({
     videoId:s.videoId, title:s.title, answers:s.answers||[], yomigana:s.yomigana||[],
-    addedByUuid:s.addedByUuid||'', addedByName:s.addedByName||'', genre:s.genre||''
+    addedByUuid:s.addedByUuid||'', addedByName:s.addedByName||'', genre:s.genre||'',
+    chorusStart: (s.chorusStart!=null && s.chorusStart!=='') ? Number(s.chorusStart) : null
   }));
   const scores={}; Object.keys(room.players||{}).forEach(u=>scores[u]=0);
   const game={ questions, total:questions.length, current:0, phase:'play', submissions:{}, roundResult:{}, scores, yaminabe:yaminabeOn };
@@ -1231,7 +1299,7 @@ function hostStartMatch(){
 // ============================================================
 let YT_READY=false, matchPlayer=null, matchPlayerReady=false, matchPendingCbs=[], matchSongStart=null, matchPlaying=false, matchStopTimer=null, matchTimerInt=null, matchWatchdog=null, pendingVideoId=null;
 let soloPlayer=null, soloPlayerReady=false, soloPendingCbs=[], soloPendingVideo=null, soloSongStart=null, soloPlaying=false, soloStopTimer=null, soloWatchdog=null;
-let matchLocal={ idx:-1, buzzed:false, submitted:false, elapsed:null };
+let matchLocal={ idx:-1, buzzed:false, submitted:false, elapsed:null, chorusPlayed:false };
 let lastFinishedRoom=null;
 
 function onYouTubeIframeAPIReady(){ YT_READY=true; }
@@ -1314,8 +1382,20 @@ function cleanupMatch(){
   if(matchStopTimer){ clearTimeout(matchStopTimer); matchStopTimer=null; }
   if(matchTimerInt){ clearInterval(matchTimerInt); matchTimerInt=null; }
   try{ matchPlayer && matchPlayer.stopVideo(); }catch(e){}
-  matchLocal={ idx:-1, buzzed:false, submitted:false, elapsed:null };
+  matchLocal={ idx:-1, buzzed:false, submitted:false, elapsed:null, chorusPlayed:false };
+  if(chorusStopTimer){ clearTimeout(chorusStopTimer); chorusStopTimer=null; }
   matchPlaying=false; matchSongStart=null;
+}
+
+let chorusStopTimer=null;
+function playMatchChorus(videoId, startSecs){
+  if(chorusStopTimer) clearTimeout(chorusStopTimer);
+  setAudioCover(true,'♪ サビ再生中...');
+  ensureMatchPlayer(()=>{ try{ matchPlayer.loadVideoById({ videoId, startSeconds:startSecs }); }catch(e){} });
+  chorusStopTimer=setTimeout(()=>{
+    try{ matchPlayer.pauseVideo(); }catch(e){}
+    setAudioCover(false,'⏹ サビ再生終了');
+  },15000);
 }
 
 // ============================================================
@@ -1348,7 +1428,7 @@ function renderMatch(id, room){
 
   if(g.phase==='play'){
     if(matchLocal.idx!==g.current){
-      matchLocal={ idx:g.current, buzzed:false, submitted:false, elapsed:null };
+      matchLocal={ idx:g.current, buzzed:false, submitted:false, elapsed:null, chorusPlayed:false };
       resetPlayView();
       loadMatchVideo(g.questions[g.current].videoId);
     }
@@ -1456,9 +1536,16 @@ function computeRoundResult(room){
   if(corrects.length){
     winnerUuid=corrects[0][0];
     const isAdder = winnerUuid===q.addedByUuid;
-    winnerPts = (settings.handicap && !isAdder) ? (settings.hcOtherHit||0) : 1;
+    const basePts = settings.correctPts ?? 1;
+    winnerPts = (settings.handicap && !isAdder) ? (settings.hcOtherHit||0) : basePts;
     scores[winnerUuid]=(scores[winnerUuid]||0)+winnerPts;
   }
+  // 誤答ポイント
+  const wrongPts = settings.wrongPts ?? 0;
+  if(wrongPts !== 0){
+    Object.entries(subs).forEach(([u,s])=>{ if(!s.correct) scores[u]=(scores[u]||0)+wrongPts; });
+  }
+
   // ハンデ：曲の追加者が（参加中なのに）正解できなかった場合の補正
   let adderPenalty=0, penalizedAdder=null;
   if(settings.handicap && q.addedByUuid && players.includes(q.addedByUuid)){
@@ -1505,6 +1592,16 @@ function renderReveal(id, room){
 
   renderStandings('reveal-standings', room, false);
 
+  // サビ再生
+  const settings=room.settings||{};
+  if(settings.chorusOn && !matchLocal.chorusPlayed){
+    const q=g.questions[idx];
+    if(q.chorusStart!=null && q.chorusStart>=0){
+      matchLocal.chorusPlayed=true;
+      playMatchChorus(q.videoId, q.chorusStart);
+    }
+  }
+
   const isHost=room.hostUuid===getUser().uuid;
   document.getElementById('reveal-host-actions').style.display=isHost?'':'none';
   document.getElementById('reveal-guest-wait').style.display=isHost?'none':'';
@@ -1528,6 +1625,18 @@ function renderFinished(id, room){
   document.getElementById('match-progress').textContent='終了';
   renderScoreChips('match-scores', room, {});
   renderStandings('finished-standings', room, true);
+
+  // 曲一覧ログ
+  const g=room.game;
+  const logEl=document.getElementById('match-song-log');
+  if(logEl && g && g.questions){
+    logEl.innerHTML=g.questions.map((q,i)=>{
+      const rr=(g.roundResult&&g.roundResult[i])||{};
+      const winnerStr=rr.winnerName?`<span class="song-log-winner">🏆 ${escHtml(rr.winnerName)}</span>`:`<span style="color:var(--color-muted);font-size:12px;">正解者なし</span>`;
+      return `<div class="song-log-row"><div class="song-log-num">${i+1}</div><div class="song-log-title">${escHtml(q.title||'?')}<br>${winnerStr}</div>${q.genre?`<span class="q-tag">${escHtml(q.genre)}</span>`:''}</div>`;
+    }).join('');
+  }
+
   const isHost=room.hostUuid===getUser().uuid;
   document.getElementById('finished-host-actions').style.display=isHost?'':'none';
   document.getElementById('finished-guest-wait').style.display=isHost?'none':'';
