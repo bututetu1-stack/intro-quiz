@@ -777,6 +777,25 @@
   </div>
 </div>
 
+<!-- モーダル：曲を編集 -->
+<div class="modal-overlay" id="edit-song-modal">
+  <div class="modal">
+    <div class="modal-title">曲を編集</div>
+    <div class="form-group"><label class="form-label">表示タイトル（任意）</label><input class="form-input" id="edit-song-title" type="text" placeholder="空欄なら最初の正解を使用"></div>
+    <div class="form-group"><label class="form-label">正解の曲名（1行に1つ）</label><textarea class="form-input" id="edit-song-answers" rows="3" placeholder="正解1&#10;正解2"></textarea></div>
+    <div class="form-group"><label class="form-label">よみがな（1行に1つ・任意）</label><textarea class="form-input" id="edit-song-yomi" rows="2" placeholder="ひらがな"></textarea></div>
+    <div class="form-group"><label class="form-label">ジャンル</label>
+      <select class="form-select" id="edit-song-genre">
+        <option value="">未分類</option><option value="J-POP">J-POP</option><option value="アニメ">アニメ</option>
+        <option value="ゲーム">ゲーム</option><option value="洋楽">洋楽</option><option value="K-POP">K-POP</option>
+        <option value="ボカロ">ボカロ</option><option value="その他">その他</option>
+      </select>
+    </div>
+    <div class="form-group"><label class="form-label">サビ開始秒（任意・空欄で自動検出）</label><input class="form-input" id="edit-song-chorus" type="number" min="0" placeholder="例: 45"></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('edit-song-modal')">キャンセル</button><button class="btn-go" onclick="saveSongEdit()">保存</button></div>
+  </div>
+</div>
+
 <!-- モーダル：部屋作成 -->
 <div class="modal-overlay" id="room-modal">
   <div class="modal">
@@ -1049,6 +1068,33 @@ function deleteSong(songId){
   list.songs=(list.songs||[]).filter(s=>s.id!==songId);
   saveListToCloud(list).then(()=>showToast('曲を削除しました','success'));
 }
+let editSongId=null;
+function openEditSong(songId){
+  const list=getList(currentListId); if(!list) return;
+  const s=(list.songs||[]).find(x=>x.id===songId); if(!s) return;
+  editSongId=songId;
+  document.getElementById('edit-song-title').value=s.title||'';
+  document.getElementById('edit-song-answers').value=(s.answers||[]).join('\n');
+  document.getElementById('edit-song-yomi').value=(s.yomigana||[]).join('\n');
+  document.getElementById('edit-song-genre').value=s.genre||'';
+  document.getElementById('edit-song-chorus').value=(s.chorusStart!=null)?s.chorusStart:'';
+  openModal('edit-song-modal');
+}
+function saveSongEdit(){
+  const list=getList(currentListId); if(!list||!editSongId) return;
+  const s=(list.songs||[]).find(x=>x.id===editSongId); if(!s) return;
+  const answers=document.getElementById('edit-song-answers').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  if(answers.length===0){ showToast('正解を1つ以上入力してください','error'); return; }
+  const yomi=document.getElementById('edit-song-yomi').value.split('\n').map(x=>x.trim()).filter(Boolean);
+  const title=document.getElementById('edit-song-title').value.trim();
+  const chorusRaw=document.getElementById('edit-song-chorus').value.trim();
+  s.title=title||answers[0];
+  s.answers=answers;
+  s.yomigana=yomi;
+  s.genre=document.getElementById('edit-song-genre').value;
+  s.chorusStart=(chorusRaw==='')?null:Number(chorusRaw);
+  saveListToCloud(list).then(()=>{ closeModal('edit-song-modal'); editSongId=null; showToast('曲を更新しました','success'); });
+}
 function confirmDeleteList(){
   const list=getList(currentListId);
   openConfirm('リストを削除しますか？',`「${list.name}」と中の${(list.songs||[]).length}曲が削除されます。`,()=>{
@@ -1082,7 +1128,7 @@ function renderDetailSongs(){
         <a class="song-title song-link" href="${escAttr(s.url)}" target="_blank" rel="noopener" title="元の動画を開く">${escHtml(s.title)} ↗</a>
         <div class="song-sub">${escHtml(sub)}</div>
       </div>
-      <div class="song-meta">${s.genre?`<span class="q-tag">${escHtml(s.genre)}</span>`:''}${editable?`<button class="song-del" onclick="deleteSong('${s.id}')">✕</button>`:''}</div>
+      <div class="song-meta">${s.genre?`<span class="q-tag">${escHtml(s.genre)}</span>`:''}${editable?`<button class="song-del" onclick="openEditSong('${s.id}')" title="編集">✎</button><button class="song-del" onclick="deleteSong('${s.id}')">✕</button>`:''}</div>
     </div>`;
   }).join('');
 }
@@ -1438,12 +1484,10 @@ function playMatchChorus(videoId, startSecs){
     matchPlayer.setVolume(0);
     matchPlayer.loadVideoById({ videoId, startSeconds:Math.max(0,startSecs) });
     matchPlayer.playVideo();
-    // フェードイン
     let v=0; clearChorusFade();
     chorusFadeInt=setInterval(()=>{ v+=8; try{ matchPlayer.setVolume(Math.min(100,v)); }catch(e){} if(v>=100) clearChorusFade(); }, CHORUS_FADE_MS/12);
   }catch(e){} });
   chorusStopTimer=setTimeout(()=>{
-    // フェードアウト
     clearChorusFade();
     let v=100;
     chorusFadeInt=setInterval(()=>{
@@ -1459,8 +1503,7 @@ const CORS_PROXIES=['https://api.allorigins.win/raw?url=','https://corsproxy.io/
 async function ensureChorusAndPlay(id, room, idx){
   if(matchLocal.chorusPlayed) return;
   const g=room.game; const q=g.questions[idx];
-  // まず本編の音を止める（全クライアントで確実に停止させる）
-  try{ matchPlayer && matchPlayer.pauseVideo(); }catch(e){}
+  try{ matchPlayer && matchPlayer.pauseVideo(); }catch(e){} // 本編は確実に止める
   let start=null;
   if(q.chorusStart!=null && q.chorusStart>=0) start=Number(q.chorusStart);          // 手動
   else if(q.chorusAuto!=null && q.chorusAuto>=0) start=Number(q.chorusAuto);         // 既出の自動値
@@ -1474,7 +1517,7 @@ async function ensureChorusAndPlay(id, room, idx){
     }
   }
   if(start!=null && start>=0){ matchLocal.chorusPlayed=true; playMatchChorus(q.videoId, start); }
-  // 非ホストで自動値未取得なら何もしない（ホストの値が届いたら次のrenderRevealで再生）
+  // 非ホストで自動値未取得なら待つ（ホストの値が届いたら次のrenderRevealで再生）
 }
 function getCachedChorus(videoId){
   return db.ref('chorusCache/'+videoId).once('value').then(s=>{ const v=s.val(); return (typeof v==='number')?v:null; }).catch(()=>null);
@@ -1584,6 +1627,8 @@ function renderMatch(id, room){
     waitEl.style.display=''; waitEl.textContent='🔔 早押し！ 判定待ち...';
   } else {
     ansWrap.style.display='none'; waitEl.style.display='none'; buzzBtn.style.display='';
+    // 再生開始イベントを取りこぼしても、再生中なら押せるようにする（回答ボタンが出ない不具合の対策）
+    if(!matchStarted && matchPlaying){ matchStarted=true; if(!matchTimerInt) matchTimerInt=setInterval(matchPlayTick,100); }
     if(lockUntil>now){
       buzzBtn.disabled=true;
       const upd=()=>{ const rem=(lockUntil-Date.now())/1000; if(rem<=0){ if(buzzCountdownInt){clearInterval(buzzCountdownInt);buzzCountdownInt=null;} buzzBtn.disabled=false; buzzBtn.textContent='🔔 早押し！'; } else { buzzBtn.textContent=`⏳ ${rem.toFixed(1)} 秒ペナルティ`; } };
@@ -1830,11 +1875,12 @@ function renderReveal(id, room){
 
   renderStandings('reveal-standings', room, false);
 
-  // サビ再生
+  // サビ再生（時間切れ・正解どちらでも。本編は必ず止める）
   const settings=room.settings||{};
-  if(settings.chorusOn && !matchLocal.chorusPlayed){
-    matchLocal.chorusPlayed=true;
+  if(settings.chorusOn){
     ensureChorusAndPlay(id, room, idx);
+  } else {
+    try{ matchPlayer && matchPlayer.pauseVideo(); }catch(e){}
   }
 
   const isHost=room.hostUuid===getUser().uuid;
