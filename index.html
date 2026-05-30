@@ -1435,6 +1435,9 @@ function onMatchSongStart(){
   setAudioCover(true, '♪ 再生中');
   if(matchTimerInt) clearInterval(matchTimerInt);
   matchTimerInt=setInterval(matchPlayTick,100);
+  // 再生開始はローカルのYouTubeイベント。Firebase更新を待たずにボタン状態を更新する
+  const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId);
+  if(room) renderMatch(room.id, room);
 }
 // 再生位置の監視（経過表示＋30秒で停止＋ホストの時間切れ判定）
 function matchPlayTick(){
@@ -1497,9 +1500,9 @@ function playMatchChorus(videoId, startSecs){
   }, CHORUS_MS-CHORUS_FADE_MS);
 }
 
-// ===== サビ開始秒の決定（手動 → ゲーム内自動値 → キャッシュ → プロキシ取得 → フォールバック） =====
-// 注意: CORS_PROXIES は外部サービス依存。障害やYouTubeのHTML仕様変更で自動検出が壊れる可能性あり（手動入力で救済可能）
-const CORS_PROXIES=['https://api.allorigins.win/raw?url=','https://corsproxy.io/?url='];
+// ===== サビ開始秒の決定（手動 → ゲーム内自動値 → キャッシュ → API取得 → フォールバック） =====
+// vide_quiz と同じく lemnoslife の Most Replayed API を使用（JSONで返るためCORSプロキシより確実）
+const MOST_REPLAYED_API='https://yt.lemnoslife.com/videos?part=mostReplayed&id=';
 async function ensureChorusAndPlay(id, room, idx){
   if(matchLocal.chorusPlayed) return;
   const g=room.game; const q=g.questions[idx];
@@ -1512,7 +1515,7 @@ async function ensureChorusAndPlay(id, room, idx){
     const isHost=room.hostUuid===getUser().uuid;
     if(start==null && isHost){
       start=await fetchChorusStart(q.videoId);                 // プロキシ取得（ホストのみ）
-      if(start==null){ const d=matchDuration(); start=(d>20)?Math.min(d*0.4, d-15):0; } // フォールバック：中間あたり
+      if(start==null){ const d=matchDuration(); start=(d>20)?Math.max(30, Math.min(d/3, d-15)):0; } // フォールバック：1/3地点
       if(start!=null){ setCachedChorus(q.videoId, start); db.ref(`rooms/${id}/game/questions/${idx}/chorusAuto`).set(start); }
     }
   }
@@ -1523,28 +1526,24 @@ function getCachedChorus(videoId){
   return db.ref('chorusCache/'+videoId).once('value').then(s=>{ const v=s.val(); return (typeof v==='number')?v:null; }).catch(()=>null);
 }
 function setCachedChorus(videoId, sec){ try{ db.ref('chorusCache/'+videoId).set(sec); }catch(e){} }
+// Most Replayed API で最も再生が多い位置（秒）を取得。失敗時は null
 async function fetchChorusStart(videoId){
-  const target=`https://www.youtube.com/watch?v=${videoId}`;
-  for(const proxy of CORS_PROXIES){
-    try{
-      const res=await fetch(proxy+encodeURIComponent(target));
-      if(!res.ok) continue;
-      const html=await res.text();
-      const sec=parseHeatmapPeak(html);
-      if(sec!=null) return sec;
-    }catch(e){}
-  }
-  return null;
-}
-// 視聴ページHTMLからヒートマップのピーク（最も再生が多い位置）を秒で返す
-function parseHeatmapPeak(html){
-  const re=/"timeRangeStartMillis":(\d+),"markerDurationMillis":\d+,"heatMarkerIntensityScoreNormalized":([0-9.]+)/g;
-  let m, best=null, bestScore=-1;
-  while((m=re.exec(html))){
-    const start=parseInt(m[1],10)/1000, score=parseFloat(m[2]);
-    if(score>bestScore){ bestScore=score; best=start; }
-  }
-  return best;
+  try{
+    const res=await fetch(MOST_REPLAYED_API+encodeURIComponent(videoId));
+    if(!res.ok) return null;
+    const data=await res.json();
+    const mr=data&&data.items&&data.items[0]&&data.items[0].mostReplayed;
+    const markers=(mr&&mr.markers)||[];
+    if(markers.length===0) return null;
+    let best=null, bestScore=-1;
+    for(const m of markers){
+      const score=(m.intensityScoreNormalized!=null)?m.intensityScoreNormalized:(m.heatMarkerIntensityScoreNormalized||0);
+      const startMs=(m.startMillis!=null)?m.startMillis:m.timeRangeStartMillis;
+      if(startMs==null) continue;
+      if(score>bestScore){ bestScore=score; best=startMs/1000; }
+    }
+    return best;
+  }catch(e){ return null; }
 }
 
 // ============================================================
