@@ -437,8 +437,8 @@
         </div>
       </div>
       <div class="form-group" id="set-list-group">
-        <label class="form-label">流す曲リスト</label>
-        <select class="form-select" id="set-list" onchange="onSettingListChange()"></select>
+        <label class="form-label">流す曲リスト（複数選択可）</label>
+        <select class="form-select" id="set-list" multiple size="4" onchange="onSettingListChange()" style="height:auto;min-height:80px;"></select>
       </div>
       <div class="row2">
         <div class="form-group" id="set-genre-group">
@@ -1255,7 +1255,8 @@ function populateHostSettings(s){
   const sel=document.getElementById('set-list');
   const lists=visibleLists().filter(l=>(l.songs||[]).length>0);
   sel.innerHTML=lists.map(l=>`<option value="${l.id}">${escHtml(l.name)}（${l.songs.length}曲）</option>`).join('');
-  if(s.listId && lists.find(l=>l.id===s.listId)) sel.value=s.listId;
+  const savedIds=new Set(Array.isArray(s.listIds)?s.listIds:(s.listId?[s.listId]:[]));
+  Array.from(sel.options).forEach(o=>{ o.selected=savedIds.has(o.value); });
   onSettingListChange(s.genre);
   document.getElementById('set-count').value=String(s.count ?? 10);
   setYaminabe(!!s.yaminabe);
@@ -1292,9 +1293,11 @@ function setChorus(on){
 }
 function toggleChorus(){ setChorus(!chorusOn); }
 function onSettingListChange(presetGenre){
-  const id=document.getElementById('set-list').value; const list=getList(id);
+  const sel=document.getElementById('set-list');
+  const selectedIds=Array.from(sel.selectedOptions).map(o=>o.value);
+  const songs=selectedIds.flatMap(id=>{ const l=getList(id); return l?(l.songs||[]):[] });
+  const genres=[...new Set(songs.map(x=>x.genre).filter(Boolean))].sort();
   const gsel=document.getElementById('set-genre');
-  const genres=list?[...new Set((list.songs||[]).map(x=>x.genre).filter(Boolean))]:[];
   gsel.innerHTML='<option value="">すべてのジャンル</option>'+genres.map(g=>`<option value="${escAttr(g)}">${escHtml(g)}</option>`).join('');
   if(presetGenre) gsel.value=presetGenre;
 }
@@ -1308,8 +1311,10 @@ function setHandicap(on){
 function toggleHandicap(){ setHandicap(!handicapOn); }
 function saveRoomSettings(){
   const id=STATE.currentRoomId; if(!id) return;
+  const listSel=document.getElementById('set-list');
   const settings={
-    listId:document.getElementById('set-list').value||'',
+    listIds:Array.from(listSel.selectedOptions).map(o=>o.value),
+    listId:Array.from(listSel.selectedOptions).map(o=>o.value)[0]||'',
     genre:document.getElementById('set-genre').value,
     count:parseInt(document.getElementById('set-count').value,10),
     yaminabe:yaminabeOn,
@@ -1334,11 +1339,11 @@ function hostStartMatch(){
     const yaminabeGenre=document.getElementById('set-yaminabe-genre').value;
     visibleLists().forEach(l=>{ (l.songs||[]).forEach(s=>{ if(!yaminabeGenre||s.genre===yaminabeGenre) pool.push(s); }); });
   } else {
-    const listId=document.getElementById('set-list').value;
-    if(!listId){ showToast('曲リストを選んでください','error'); return; }
-    const list=getList(listId);
+    const listSel=document.getElementById('set-list');
+    const listIds=Array.from(listSel.selectedOptions).map(o=>o.value);
+    if(!listIds.length){ showToast('曲リストを選んでください','error'); return; }
     const genre=document.getElementById('set-genre').value;
-    pool=(list.songs||[]).filter(s=>!genre||s.genre===genre);
+    listIds.forEach(lid=>{ const list=getList(lid); if(list) pool.push(...(list.songs||[]).filter(s=>!genre||s.genre===genre)); });
   }
   pool=pool.filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）');
   if(pool.length<1){ showToast('出題できる曲がありません（正解未設定は除外）','error'); return; }
@@ -1418,6 +1423,8 @@ function loadMatchVideo(videoId){
   if(matchTimerInt){ clearInterval(matchTimerInt); matchTimerInt=null; }
   if(matchWatchdog) clearTimeout(matchWatchdog);
   if(chorusStopTimer){ clearTimeout(chorusStopTimer); chorusStopTimer=null; }
+  if(chorusFadeInt){ clearInterval(chorusFadeInt); chorusFadeInt=null; }
+  try{ matchPlayer && matchPlayer.setVolume(100); }catch(e){}
   document.getElementById('match-elapsed').textContent='経過: 0.00 秒';
   ensureMatchPlayer();
   if(matchAudioUnlocked){ document.getElementById('match-unlock').style.display='none'; autoPlayMatch(); }
@@ -1469,7 +1476,7 @@ function matchPlayTick(){
   const t=matchCurrentTime();
   if(!matchEnded && t>0){
     document.getElementById('match-elapsed').textContent=`経過: ${t.toFixed(2)} 秒`;
-    setTimeBar(SONG_LIMIT-t, SONG_LIMIT, '🎵 再生');
+    if(!answerBarInt) setTimeBar(SONG_LIMIT-t, SONG_LIMIT, '🎵 再生');
   }
   if(t>=SONG_LIMIT){
     if(!matchEnded){
@@ -1963,8 +1970,12 @@ function renderFinished(id, room){
   if(logEl && g && g.questions){
     logEl.innerHTML=g.questions.map((q,i)=>{
       const rr=(g.roundResult&&g.roundResult[i])||{};
+      const round=(g.rounds&&g.rounds[i])||{};
+      const attempts=round.attempts?Object.values(round.attempts):[];
       const winnerStr=rr.winnerName?`<span class="song-log-winner">🏆 ${escHtml(rr.winnerName)}</span>`:`<span style="color:var(--color-muted);font-size:12px;">正解者なし</span>`;
-      return `<div class="song-log-row"><div class="song-log-num">${i+1}</div><div class="song-log-title">${escHtml(q.title||'?')}<br>${winnerStr}</div>${q.genre?`<span class="q-tag">${escHtml(q.genre)}</span>`:''}</div>`;
+      const attemptRows=attempts.sort((a,b)=>((a.elapsed==null?1e9:a.elapsed))-((b.elapsed==null?1e9:b.elapsed)))
+        .map(a=>`<span style="font-size:11px;color:var(--color-muted);">${a.correct?'✅':'❌'}${escHtml(a.name||'?')}${a.elapsed!=null?' '+a.elapsed.toFixed(2)+'秒':''}</span>`).join('　');
+      return `<div class="song-log-row"><div class="song-log-num">${i+1}</div><div class="song-log-title">${escHtml(q.title||'?')}<br>${winnerStr}${attemptRows?`<br>${attemptRows}`:''}</div>${q.genre?`<span class="q-tag">${escHtml(q.genre)}</span>`:''}</div>`;
     }).join('');
   }
 
@@ -1994,8 +2005,9 @@ function buildPoolFromSettings(s, excludeIds){
   if(s.yaminabe){
     visibleLists().forEach(l=>{ (l.songs||[]).forEach(x=>{ if(!s.yaminabeGenre||x.genre===s.yaminabeGenre) pool.push(x); }); });
   } else {
-    const list=getList(s.listId); if(!list) return [];
-    pool=(list.songs||[]).filter(x=>!s.genre||x.genre===s.genre);
+    const ids=Array.isArray(s.listIds)&&s.listIds.length?s.listIds:(s.listId?[s.listId]:[]);
+    if(!ids.length) return [];
+    ids.forEach(lid=>{ const list=getList(lid); if(list) pool.push(...(list.songs||[]).filter(x=>!s.genre||x.genre===s.genre)); });
   }
   pool=pool.filter(x=>(x.answers||[]).length && x.answers[0]!=='（未設定）');
   if(excludeIds&&excludeIds.size) pool=pool.filter(x=>!excludeIds.has(x.videoId));
