@@ -196,6 +196,11 @@
   .buzz-btn:disabled { opacity:0.4; cursor:not-allowed; transform:none; box-shadow:none; }
   .match-elapsed { text-align:center; font-family:var(--font-display); font-size:22px; color:var(--color-accent); letter-spacing:2px; margin:14px 0; }
   .match-wait { text-align:center; color:var(--color-muted); font-size:14px; padding:20px; }
+  .time-bar-wrap { width:100%; height:10px; background:var(--color-surface2); border-radius:6px; overflow:hidden; margin:12px 0 4px; border:1px solid var(--color-border); }
+  .time-bar-fill { height:100%; width:100%; background:var(--color-accent); transition:width 0.1s linear, background 0.3s; border-radius:6px; }
+  .time-bar-fill.warn { background:#ffae47; }
+  .time-bar-fill.danger { background:var(--color-wrong); }
+  .time-bar-label { text-align:center; font-size:12px; color:var(--color-muted); margin-bottom:6px; }
   .fallback-play { display:block; margin:10px auto 0; }
   .reveal-correct { text-align:center; padding:24px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius); margin-bottom:20px; }
   .reveal-answer { font-size:24px; font-weight:900; color:var(--color-correct); margin:8px 0; }
@@ -515,6 +520,10 @@
 
     <!-- 出題中 -->
     <div id="match-play-view">
+      <div id="match-timebar" style="display:none;">
+        <div class="time-bar-label" id="match-timebar-label">残り時間</div>
+        <div class="time-bar-wrap"><div class="time-bar-fill" id="match-timebar-fill"></div></div>
+      </div>
       <div class="player-area" style="position:relative;">
         <div id="match-yt" style="width:100%; aspect-ratio:16/9; background:#000;"></div>
         <!-- 動画は隠して音声のみ -->
@@ -568,6 +577,8 @@
       <div style="font-size:13px; color:var(--color-muted); margin:20px 0 8px;">📋 出題曲一覧</div>
       <div class="sub-list" id="match-song-log" style="margin-bottom:20px;"></div>
       <div id="finished-host-actions" style="display:none;">
+        <button class="btn-primary" style="width:100%; margin-bottom:8px;" onclick="hostContinueMatch(true)">🔄 既出曲を除外して続ける（得点引継ぎ）</button>
+        <button class="btn-sub" style="width:100%; margin-bottom:12px;" onclick="hostContinueMatch(false)">▶ 得点そのまま続ける（全曲対象）</button>
         <div class="result-actions">
           <button class="btn-sub" style="flex:1;" onclick="hostBackToLobby()">ロビーに戻る</button>
           <button class="btn-sub" style="flex:1; border-color:var(--color-wrong); color:var(--color-wrong);" onclick="leaveRoom()">解散</button>
@@ -1439,10 +1450,26 @@ function onMatchSongStart(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId);
   if(room) renderMatch(room.id, room);
 }
+// 上部の残り時間バーを更新（remain/total 秒）。hide=trueで非表示
+let answerBarInt=null;
+function setTimeBar(remain, total, label){
+  const wrap=document.getElementById('match-timebar');
+  if(remain==null){ wrap.style.display='none'; return; }
+  wrap.style.display='';
+  const pct=Math.max(0, Math.min(100, (remain/total)*100));
+  const fill=document.getElementById('match-timebar-fill');
+  fill.style.width=pct+'%';
+  fill.className='time-bar-fill'+(pct<=25?' danger':(pct<=50?' warn':''));
+  document.getElementById('match-timebar-label').textContent=`${label} 残り ${Math.max(0,remain).toFixed(1)} 秒`;
+}
+function clearAnswerBar(){ if(answerBarInt){ clearInterval(answerBarInt); answerBarInt=null; } }
 // 再生位置の監視（経過表示＋30秒で停止＋ホストの時間切れ判定）
 function matchPlayTick(){
   const t=matchCurrentTime();
-  if(!matchEnded && t>0) document.getElementById('match-elapsed').textContent=`経過: ${t.toFixed(2)} 秒`;
+  if(!matchEnded && t>0){
+    document.getElementById('match-elapsed').textContent=`経過: ${t.toFixed(2)} 秒`;
+    setTimeBar(SONG_LIMIT-t, SONG_LIMIT, '🎵 再生');
+  }
   if(t>=SONG_LIMIT){
     if(!matchEnded){
       matchEnded=true;
@@ -1463,6 +1490,8 @@ function setAudioCover(playing, text){
 function cleanupMatch(){
   if(matchStopTimer){ clearTimeout(matchStopTimer); matchStopTimer=null; }
   if(matchTimerInt){ clearInterval(matchTimerInt); matchTimerInt=null; }
+  if(answerBarInt){ clearInterval(answerBarInt); answerBarInt=null; }
+  try{ setTimeBar(null); }catch(e){}
   try{ matchPlayer && matchPlayer.stopVideo(); }catch(e){}
   matchLocal={ idx:-1, buzzSent:false, answered:false, elapsed:null, chorusPlayed:false };
   if(chorusStopTimer){ clearTimeout(chorusStopTimer); chorusStopTimer=null; }
@@ -1616,6 +1645,17 @@ function renderMatch(id, room){
   const ansWrap=document.getElementById('match-answer-wrap');
   const waitEl=document.getElementById('match-wait');
   if(buzzCountdownInt){ clearInterval(buzzCountdownInt); buzzCountdownInt=null; }
+  clearAnswerBar();
+
+  // 回答中（誰かに回答権あり）なら回答用の残り時間バーを表示
+  if(answerer && round.answerStartAt){
+    const total=ANSWER_LIMIT_MS/1000;
+    const tick=()=>{ const remain=total-(Date.now()-round.answerStartAt)/1000; setTimeBar(remain, total, '⌨️ 回答'); if(remain<=0) clearAnswerBar(); };
+    tick(); answerBarInt=setInterval(tick,100);
+  } else if(!answerer){
+    // 再生中はmatchPlayTickがバーを更新。停止中なら隠す
+    if(!matchStarted || matchEnded) setTimeBar(null);
+  }
 
   if(answerer===me && !matchLocal.answered){
     buzzBtn.style.display='none'; waitEl.style.display='none'; ansWrap.style.display='';
@@ -1658,6 +1698,7 @@ function resetPlayView(){
   document.getElementById('match-answer-wrap').style.display='none';
   document.getElementById('match-answer-input').value='';
   document.getElementById('match-wait').style.display='none';
+  clearAnswerBar(); setTimeBar(null);
   setAudioCover(false, 'まもなく再生');
 }
 
@@ -1732,6 +1773,7 @@ function maybeHostArbitrate(id, room){
     updates[`rooms/${id}/game/rounds/${idx}/answerer`]=winUuid;
     updates[`rooms/${id}/game/rounds/${idx}/answererName`]=winBuzz.name||(r.players[winUuid]&&r.players[winUuid].name)||'?';
     updates[`rooms/${id}/game/rounds/${idx}/answererElapsed`]=(winBuzz.elapsed!=null?winBuzz.elapsed:null);
+    updates[`rooms/${id}/game/rounds/${idx}/answerStartAt`]=firebase.database.ServerValue.TIMESTAMP;
     updates[`rooms/${id}/game/buzzes/${idx}`]=null;
     db.ref().update(updates);
     if(answererTimer) clearTimeout(answererTimer);
@@ -1936,6 +1978,42 @@ function hostBackToLobby(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
   db.ref(`rooms/${room.id}/game`).remove();
   db.ref(`rooms/${room.id}/status`).set('lobby');
+}
+
+// 保存済み設定から出題プールを構築（excludeIds は除外する videoId の集合）
+function buildPoolFromSettings(s, excludeIds){
+  let pool=[];
+  if(s.yaminabe){
+    visibleLists().forEach(l=>{ (l.songs||[]).forEach(x=>{ if(!s.yaminabeGenre||x.genre===s.yaminabeGenre) pool.push(x); }); });
+  } else {
+    const list=getList(s.listId); if(!list) return [];
+    pool=(list.songs||[]).filter(x=>!s.genre||x.genre===s.genre);
+  }
+  pool=pool.filter(x=>(x.answers||[]).length && x.answers[0]!=='（未設定）');
+  if(excludeIds&&excludeIds.size) pool=pool.filter(x=>!excludeIds.has(x.videoId));
+  return pool;
+}
+
+// 対戦終了後にそのまま続ける。excludePlayed=true なら既出曲を除外、得点は常に引き継ぐ
+function hostContinueMatch(excludePlayed){
+  const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
+  const s=room.settings||{};
+  const prevGame=room.game||{};
+  const excludeIds = excludePlayed ? new Set((prevGame.questions||[]).map(q=>q.videoId)) : null;
+  let pool=buildPoolFromSettings(s, excludeIds);
+  if(pool.length<1){ showToast(excludePlayed?'未出題の曲がもうありません':'出題できる曲がありません','error'); return; }
+  pool=[...pool].sort(()=>Math.random()-0.5);
+  const count=parseInt(s.count,10)||0;
+  if(count>0) pool=pool.slice(0,count);
+  const questions=pool.map(x=>({
+    videoId:x.videoId, title:x.title, answers:x.answers||[], yomigana:x.yomigana||[],
+    addedByUuid:x.addedByUuid||'', addedByName:x.addedByName||'', genre:x.genre||'',
+    chorusStart:(x.chorusStart!=null && x.chorusStart!=='')?Number(x.chorusStart):null
+  }));
+  const scores={}; Object.keys(room.players||{}).forEach(u=>scores[u]=(prevGame.scores&&prevGame.scores[u])||0); // 得点引継ぎ
+  const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:!!s.yaminabe };
+  matchLocal={ idx:-1, buzzSent:false, answered:false, myTurn:false, elapsed:null, chorusPlayed:false };
+  db.ref('rooms/'+room.id).update({ status:'playing', game }).then(()=>showToast('対戦を続けます！','success'));
 }
 
 // スコアチップ（回答済みは薄く）
