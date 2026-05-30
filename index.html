@@ -578,7 +578,8 @@
       <div class="sub-list" id="match-song-log" style="margin-bottom:20px;"></div>
       <div id="finished-host-actions" style="display:none;">
         <button class="btn-primary" style="width:100%; margin-bottom:8px;" onclick="hostContinueMatch(true)">🔄 既出曲を除外して続ける（得点引継ぎ）</button>
-        <button class="btn-sub" style="width:100%; margin-bottom:12px;" onclick="hostContinueMatch(false)">▶ 得点そのまま続ける（全曲対象）</button>
+        <button class="btn-sub" style="width:100%; margin-bottom:8px;" onclick="hostContinueMatch(false)">▶ 得点そのまま続ける（全曲対象）</button>
+        <button class="btn-sub" style="width:100%; margin-bottom:12px;" onclick="hostResetScores()">🔄 得点をリセット</button>
         <div class="result-actions">
           <button class="btn-sub" style="flex:1;" onclick="hostBackToLobby()">ロビーに戻る</button>
           <button class="btn-sub" style="flex:1; border-color:var(--color-wrong); color:var(--color-wrong);" onclick="leaveRoom()">解散</button>
@@ -1978,6 +1979,13 @@ function hostBackToLobby(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
   db.ref(`rooms/${room.id}/game`).remove();
   db.ref(`rooms/${room.id}/status`).set('lobby');
+}
+
+// 得点を全員0にリセット（終了画面・引継ぎ前のやり直し用）
+function hostResetScores(){
+  const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room||!room.game) return;
+  const scores={}; Object.keys(room.players||{}).forEach(u=>scores[u]=0);
+  db.ref(`rooms/${room.id}/game/scores`).set(scores).then(()=>showToast('得点をリセットしました','success'));
 }
 
 // 保存済み設定から出題プールを構築（excludeIds は除外する videoId の集合）
