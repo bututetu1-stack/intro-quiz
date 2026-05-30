@@ -1487,17 +1487,24 @@ function playMatchChorus(videoId, startSecs){
     matchPlayer.setVolume(0);
     matchPlayer.loadVideoById({ videoId, startSeconds:Math.max(0,startSecs) });
     matchPlayer.playVideo();
+    // 実際にPLAYING状態になってからフェードイン開始（バッファリング中に音量が上がるのを防ぐ）
     let v=0; clearChorusFade();
-    chorusFadeInt=setInterval(()=>{ v+=8; try{ matchPlayer.setVolume(Math.min(100,v)); }catch(e){} if(v>=100) clearChorusFade(); }, CHORUS_FADE_MS/12);
+    chorusFadeInt=setInterval(()=>{
+      try{
+        if(matchPlayer.getPlayerState()!==1) return; // まだ再生していない → 待つ
+        v+=5; matchPlayer.setVolume(Math.min(100,v));
+        if(v>=100) clearChorusFade();
+      }catch(e){ clearChorusFade(); }
+    }, 50); // 50ms × 20steps = 1秒でフェードイン
   }catch(e){} });
   chorusStopTimer=setTimeout(()=>{
     clearChorusFade();
     let v=100;
     chorusFadeInt=setInterval(()=>{
-      v-=8; try{ matchPlayer.setVolume(Math.max(0,v)); }catch(e){}
+      v-=5; try{ matchPlayer.setVolume(Math.max(0,v)); }catch(e){}
       if(v<=0){ clearChorusFade(); try{ matchPlayer.pauseVideo(); matchPlayer.setVolume(100); }catch(e){} setAudioCover(false,'⏹ サビ再生終了'); }
-    }, CHORUS_FADE_MS/12);
-  }, CHORUS_MS-CHORUS_FADE_MS);
+    }, 50);
+  }, CHORUS_MS-1000); // フェードアウト1秒前に開始
 }
 
 // ===== サビ開始秒の決定（手動 → ゲーム内自動値 → キャッシュ → API取得 → フォールバック） =====
@@ -1620,7 +1627,8 @@ function renderMatch(id, room){
     waitEl.style.display=''; waitEl.textContent='判定中...';
   } else if(answerer){
     buzzBtn.style.display='none'; ansWrap.style.display='none';
-    waitEl.style.display=''; waitEl.textContent=`${escHtml(round.answererName||'相手')} さんが回答中...`;
+    waitEl.style.display='';
+    waitEl.innerHTML=`<div style="font-size:18px; font-weight:700; color:var(--color-accent2);">🎤 ${escHtml(round.answererName||'相手')} さんが回答中...</div>`;
   } else if(iBuzzed){
     buzzBtn.style.display='none'; ansWrap.style.display='none';
     waitEl.style.display=''; waitEl.textContent='🔔 早押し！ 判定待ち...';
