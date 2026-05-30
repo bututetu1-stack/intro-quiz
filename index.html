@@ -317,6 +317,10 @@
   .uuid-restore summary::-webkit-details-marker { display:none; }
   .uuid-restore summary::before { content:'▸ '; }
   .uuid-restore[open] summary::before { content:'▾ '; }
+  .list-checks { display:flex; flex-direction:column; gap:6px; max-height:200px; overflow-y:auto; border:1px solid var(--color-border); border-radius:10px; padding:8px; }
+  .list-checks label { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer; font-size:14px; transition:background .12s; }
+  .list-checks label:hover { background:var(--color-border); }
+  .list-checks input[type=checkbox] { width:18px; height:18px; flex-shrink:0; accent-color:var(--color-accent); }
   .song-log-row { display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--color-border); font-size:13px; flex-wrap:wrap; }
   .song-log-row:last-child { border-bottom:none; }
   .song-log-num { font-family:var(--font-display); font-size:20px; color:var(--color-accent); width:32px; text-align:center; flex-shrink:0; }
@@ -438,7 +442,7 @@
       </div>
       <div class="form-group" id="set-list-group">
         <label class="form-label">流す曲リスト（複数選択可）</label>
-        <select class="form-select" id="set-list" multiple size="4" onchange="onSettingListChange()" style="height:auto;min-height:80px;"></select>
+        <div id="set-list" class="list-checks"></div>
       </div>
       <div class="row2">
         <div class="form-group" id="set-genre-group">
@@ -1254,9 +1258,8 @@ function renderLobby(id, room){
 function populateHostSettings(s){
   const sel=document.getElementById('set-list');
   const lists=visibleLists().filter(l=>(l.songs||[]).length>0);
-  sel.innerHTML=lists.map(l=>`<option value="${l.id}">${escHtml(l.name)}（${l.songs.length}曲）</option>`).join('');
   const savedIds=new Set(Array.isArray(s.listIds)?s.listIds:(s.listId?[s.listId]:[]));
-  Array.from(sel.options).forEach(o=>{ o.selected=savedIds.has(o.value); });
+  sel.innerHTML=lists.map(l=>`<label><input type="checkbox" value="${l.id}" ${savedIds.has(l.id)?'checked':''} onchange="onSettingListChange()">${escHtml(l.name)}（${l.songs.length}曲）</label>`).join('') || '<div style="color:var(--color-muted);font-size:13px;padding:8px;">リストがありません</div>';
   onSettingListChange(s.genre);
   document.getElementById('set-count').value=String(s.count ?? 10);
   setYaminabe(!!s.yaminabe);
@@ -1292,9 +1295,11 @@ function setChorus(on){
   document.getElementById('chorus-label').textContent=on?'ON':'OFF';
 }
 function toggleChorus(){ setChorus(!chorusOn); }
+function getSelectedListIds(){
+  return Array.from(document.querySelectorAll('#set-list input[type=checkbox]:checked')).map(c=>c.value);
+}
 function onSettingListChange(presetGenre){
-  const sel=document.getElementById('set-list');
-  const selectedIds=Array.from(sel.selectedOptions).map(o=>o.value);
+  const selectedIds=getSelectedListIds();
   const songs=selectedIds.flatMap(id=>{ const l=getList(id); return l?(l.songs||[]):[] });
   const genres=[...new Set(songs.map(x=>x.genre).filter(Boolean))].sort();
   const gsel=document.getElementById('set-genre');
@@ -1311,10 +1316,10 @@ function setHandicap(on){
 function toggleHandicap(){ setHandicap(!handicapOn); }
 function saveRoomSettings(){
   const id=STATE.currentRoomId; if(!id) return;
-  const listSel=document.getElementById('set-list');
+  const selListIds=getSelectedListIds();
   const settings={
-    listIds:Array.from(listSel.selectedOptions).map(o=>o.value),
-    listId:Array.from(listSel.selectedOptions).map(o=>o.value)[0]||'',
+    listIds:selListIds,
+    listId:selListIds[0]||'',
     genre:document.getElementById('set-genre').value,
     count:parseInt(document.getElementById('set-count').value,10),
     yaminabe:yaminabeOn,
@@ -1339,8 +1344,7 @@ function hostStartMatch(){
     const yaminabeGenre=document.getElementById('set-yaminabe-genre').value;
     visibleLists().forEach(l=>{ (l.songs||[]).forEach(s=>{ if(!yaminabeGenre||s.genre===yaminabeGenre) pool.push(s); }); });
   } else {
-    const listSel=document.getElementById('set-list');
-    const listIds=Array.from(listSel.selectedOptions).map(o=>o.value);
+    const listIds=getSelectedListIds();
     if(!listIds.length){ showToast('曲リストを選んでください','error'); return; }
     const genre=document.getElementById('set-genre').value;
     listIds.forEach(lid=>{ const list=getList(lid); if(list) pool.push(...(list.songs||[]).filter(s=>!genre||s.genre===genre)); });
@@ -2086,6 +2090,7 @@ function copyCode(){
 function leaveRoom(){
   const id=STATE.currentRoomId; if(!id){ showPage('rooms'); return; }
   const u=getUser(); const room=STATE.rooms.find(r=>r.id===id);
+  cleanupMatch(); // 退出時に再生中の曲を止める
   if(lobbyRef){ lobbyRef.off(); lobbyRef=null; }
   if(room && room.hostUuid===u.uuid){
     db.ref('rooms/'+id).onDisconnect().cancel();
