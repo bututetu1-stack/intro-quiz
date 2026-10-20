@@ -261,6 +261,13 @@
   .settings-adv summary::before { content:'▸ '; color:var(--color-accent); }
   .settings-adv[open] summary::before { content:'▾ '; }
   .start-btn { min-width:220px; font-size:18px; padding:16px 36px; }
+  .settings-summary { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:14px; }
+  .pill { font-size:12px; font-weight:800; padding:5px 12px; border-radius:999px; background:rgba(255,255,255,0.06); border:1px solid var(--color-border-strong); }
+  .best-row { display:flex; align-items:baseline; gap:10px; padding:10px 0; border-bottom:1px solid var(--color-border); flex-wrap:wrap; }
+  .best-row:last-child { border-bottom:none; }
+  .best-name { flex:1; font-weight:800; min-width:120px; }
+  .best-rate { font-family:var(--font-display); font-weight:700; font-size:22px; color:var(--color-accent); }
+  .best-sub { font-size:12px; color:var(--color-muted); font-weight:700; }
 
   /* ===== プレイ画面（ソロ・対戦共通） ===== */
   .quiz-container { max-width:720px; margin:0 auto; padding:24px 20px 40px; }
@@ -392,7 +399,7 @@
   .result-total { font-size:15px; color:var(--color-muted); font-weight:700; }
   .result-msg { font-size:22px; font-weight:800; margin-bottom:26px; }
   .result-item { display:flex; align-items:center; gap:14px; padding:12px 16px; border-bottom:1px solid var(--color-border); font-size:14px; text-align:left; }
-  .result-item:last-child { border-bottom:none; } .result-actions { display:flex; gap:12px; }
+  .result-item:last-child { border-bottom:none; } .result-actions { display:flex; gap:10px; flex-wrap:wrap; }
   .result-thumb { width:72px; aspect-ratio:16/9; object-fit:cover; border-radius:8px; flex-shrink:0; background:#000; }
 
   /* ===== モーダル・トースト ===== */
@@ -823,6 +830,7 @@
     <div class="card" id="lobby-guest-wait" style="display:none; text-align:center;">
       <div class="hero-eq" aria-hidden="true" style="height:30px; margin-bottom:6px;"><span></span><span></span><span></span><span></span><span></span></div>
       <div style="color:var(--color-muted); font-size:14px; font-weight:700;">ホストが対戦を始めるのを待っています…</div>
+      <div class="settings-summary" id="lobby-settings-summary"></div>
     </div>
 
     <div class="actions-right">
@@ -908,6 +916,7 @@
       <div class="podium" id="finished-podium"></div>
       <div class="awards" id="finished-awards"></div>
       <div class="stand-list" id="finished-standings" style="margin-top:16px;"></div>
+      <button class="btn-sub" style="width:100%; margin-bottom:16px;" onclick="shareMatchResult()">📤 結果をシェア</button>
       <div style="font-size:13px; color:var(--color-muted); margin:20px 0 8px;">📋 出題曲一覧</div>
       <div class="sub-list" id="match-song-log" style="margin-bottom:20px;"></div>
       <div id="finished-host-actions" style="display:none;">
@@ -998,6 +1007,7 @@
     <button class="btn-primary" id="solo-start-btn" style="width:100%; margin-bottom:14px;" onclick="soloStart()">▶ 再生してスタート</button>
     <button class="buzz-btn" id="solo-buzz-btn" style="display:none;" onpointerdown="soloBuzz()" onclick="soloBuzz()"><span>🔔</span><span>わかった！</span></button>
     <button class="giveup-btn" id="solo-giveup-btn" style="display:none;" onclick="soloGiveUp()">わからない（答えを見る）</button>
+    <button class="giveup-btn" id="solo-skip-btn" style="display:none;" onclick="soloSkipSong()">⏭ この曲を飛ばす（出題数から外します）</button>
     <div class="answer-area" id="solo-answer-area" style="display:none;">
       <div class="answer-label" id="solo-buzz-time" style="color:var(--color-accent);">曲名を入力（よみがな・別表記もOK）</div>
       <div class="answer-input-wrap">
@@ -1026,6 +1036,7 @@
     <div class="result-list" id="result-list"></div>
     <div class="result-actions">
       <button class="btn-primary" style="flex:1;" onclick="retrySolo()">▶ もう一度</button>
+      <button class="btn-sub" style="flex:1;" onclick="shareSoloResult()">📤 シェア</button>
       <button class="btn-sub" style="flex:1;" onclick="showPage('home')">ホームへ</button>
     </div>
   </div>
@@ -1053,6 +1064,7 @@
     <div class="section-title">成績</div>
     <div class="section-desc">オンライン対戦の成績を記録しています。</div>
     <div class="card" id="my-stats-card"></div>
+    <div class="card" id="solo-bests-card"></div>
     <div style="font-size:13px; color:var(--color-muted); margin:8px 0 12px;">🏆 ランキング（勝利数順）</div>
     <div class="stand-list" id="stats-ranking"></div>
   </div>
@@ -2241,6 +2253,21 @@ function enterLobby(id){
   lobbyRef.on('value', snap=>{ const v=snap.val(); if(v) v.id=id; renderRoomState(id, v); });
 }
 
+// 対戦設定の概要（参加者向け）
+function settingsSummaryHtml(s){
+  const ids=Array.isArray(s.listIds)?s.listIds:(s.listId?[s.listId]:[]);
+  if(!s.yaminabe && !ids.length) return '<span class="pill">ホストが設定中です</span>';
+  const names=s.yaminabe?['闇鍋（全リストから）']:ids.map(i=>{ const l=getList(i); return l?l.name:'（非公開のリスト）'; });
+  const count=(s.count??10);
+  return [
+    `<span class="pill">🎵 ${escHtml(names.join('・'))}</span>`,
+    `<span class="pill">${count>0?count+'問':'全曲'}</span>`,
+    `<span class="pill">⏱ ${s.songLimit||30}秒</span>`,
+    `<span class="pill">${s.suggestOn===false?'回答候補なし':'回答候補あり'}</span>`,
+    s.chorusOn?'<span class="pill">サビ再生</span>':'',
+    s.handicap?'<span class="pill">ハンデ戦</span>':''
+  ].join('');
+}
 const lobbySeenPlayers={};   // 部屋ごとに表示済みの参加者（新しく入った人だけアニメーションする）
 function renderLobby(id, room){
   const u=getUser(); const isHost=room.hostUuid===u.uuid;
@@ -2273,6 +2300,7 @@ function renderLobby(id, room){
   if(lp.dataset.key!==key){ lp.innerHTML=tilesHtml; lp.dataset.key=key; players.forEach(p=>seen.add(p.uuid)); }
 
   document.getElementById('lobby-host-settings').style.display=isHost?'':'none';
+  if(!isHost) document.getElementById('lobby-settings-summary').innerHTML=settingsSummaryHtml(room.settings||{});
   // ホスト：画面下に「▶ 対戦を開始」を固定
   document.getElementById('lobby-cta').hidden=!isHost;
   document.querySelector('#page-room-lobby .container').classList.toggle('has-sticky-cta', isHost);
@@ -3181,7 +3209,29 @@ function hostNext(){
   }
 }
 
+// 結果をシェア（スマホは共有シート、PCはクリップボードにコピー）
+function shareText(text){
+  const full=text+'\n'+location.origin+location.pathname;
+  if(navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)){ navigator.share({ text:full }).catch(()=>{}); return; }
+  if(navigator.clipboard) navigator.clipboard.writeText(full).then(()=>showToast('結果をコピーしました。SNSやLINEに貼り付けてシェアできます','success'),()=>prompt('この文章をコピーしてください', full));
+  else prompt('この文章をコピーしてください', full);
+}
+function shareSoloResult(){
+  const list=getList(quiz.listId); const total=quiz.results.length;
+  const marks=quiz.results.map(r=>r.correct?'🟩':'🟥').join('');
+  const times=quiz.results.filter(r=>r.correct && r.time!=null).map(r=>r.time);
+  const avg=times.length?(times.reduce((a,b)=>a+b,0)/times.length).toFixed(1):null;
+  shareText(`🎵 INTRO QUIZ ソロ「${list?list.name:'?'}」\n${quiz.score}/${total}問正解 ${marks}${avg?`\n正解の平均 ${avg}秒・最速 ${Math.min(...times).toFixed(2)}秒`:''}`);
+}
+let lastFinishedRoomView=null;
+function shareMatchResult(){
+  const room=lastFinishedRoomView; if(!room) return;
+  const medals=['🥇','🥈','🥉'];
+  const lines=sortedStandings(room).map((p,i)=>`${medals[i]||(i+1)+'.'} ${p.name} ${p.score}pt`);
+  shareText(`🎵 INTRO QUIZ 対戦結果（${(room.game&&room.game.total)||'?'}問）\n${lines.join('\n')}`);
+}
 function renderFinished(id, room){
+  lastFinishedRoomView=room;
   document.getElementById('match-play-view').style.display='none';
   document.getElementById('match-reveal-view').style.display='none';
   document.getElementById('match-finished-view').style.display='';
@@ -3473,6 +3523,7 @@ function loadQuestion(){
   const sb=document.getElementById('solo-start-btn'); sb.style.display=''; sb.disabled=false; sb.textContent='▶ 再生してスタート';
   document.getElementById('solo-buzz-btn').style.display='none';
   document.getElementById('solo-giveup-btn').style.display='none';
+  document.getElementById('solo-skip-btn').style.display='none';
   document.getElementById('solo-answer-area').style.display='none';
   setSoloPauseBtn(null);
   setSoloCover(false,'▶ を押して再生'+kbHint('（Space でもOK）'));
@@ -3493,7 +3544,7 @@ function soloStart(){
   ensureSoloPlayer(()=>{ try{ soloPlayer.loadVideoById(soloPendingVideo); }catch(e){} });
   if(soloWatchdog) clearTimeout(soloWatchdog);
   soloWatchdog=setTimeout(()=>{
-    if(!soloPlaying){ setSoloCover(false,'⚠ 再生できませんでした'); sb.disabled=false; sb.textContent='▶ もう一度試す'; showToast('この曲は再生できないかもしれません','error'); }
+    if(!soloPlaying){ setSoloCover(false,'⚠ 再生できませんでした'); sb.disabled=false; sb.textContent='▶ もう一度試す'; document.getElementById('solo-skip-btn').style.display=''; showToast('この曲は再生できないかもしれません','error'); }
   },6000);
 }
 // 再生位置（秒）。一時停止中は進まないので、残り時間もそのまま止まる
@@ -3505,6 +3556,7 @@ function onSoloSongStart(){
   document.getElementById('solo-start-btn').style.display='none';
   document.getElementById('solo-buzz-btn').style.display='';
   document.getElementById('solo-giveup-btn').style.display='';
+  document.getElementById('solo-skip-btn').style.display='none';
   setSoloPauseBtn(true);
   setSoloCover(true,'♪ 再生中');
   if(quiz.timer) clearInterval(quiz.timer);
@@ -3580,12 +3632,25 @@ function ensureSoloPlayer(cb){
     events:{
       onReady:()=>{ soloPlayerReady=true; soloPendingCbs.forEach(f=>f()); soloPendingCbs=[]; },
       onStateChange:e=>{ if(e.data===YT.PlayerState.PLAYING && !soloPlaying) onSoloSongStart(); },
-      onError:()=>{ setSoloCover(false,'⚠ この曲は再生できません'); const sb=document.getElementById('solo-start-btn'); if(sb){ sb.disabled=false; sb.textContent='▶ もう一度試す'; } }
+      onError:()=>{ setSoloCover(false,'⚠ この曲は再生できません'); const sb=document.getElementById('solo-start-btn'); if(sb){ sb.disabled=false; sb.textContent='▶ もう一度試す'; } document.getElementById('solo-skip-btn').style.display=''; }
     }
   });
 }
 // NFKC で全角英数字→半角、半角カナ→全角カナに揃えてから比較する
 function normalize(s){ return s.normalize('NFKC').toLowerCase().replace(/[ぁ-ゖ]/g,c=>String.fromCharCode(c.charCodeAt(0)+96)).replace(/[^\p{L}\p{N}]/gu,''); }
+// 再生できない曲を飛ばす（不正解にはせず、出題数から外す）
+function soloSkipSong(){
+  if(quiz.timer){ clearInterval(quiz.timer); quiz.timer=null; }
+  clearTimeout(quiz.autoTimer); if(soloWatchdog){ clearTimeout(soloWatchdog); soloWatchdog=null; }
+  try{ soloPlayer && soloPlayer.stopVideo(); }catch(e){}
+  soloPlaying=false;
+  quiz.songs.splice(quiz.current,1);
+  if(quiz.current>=quiz.songs.length){
+    if(quiz.results.length) showResult(); else { showToast('再生できる曲がありませんでした','error'); showPage('setup'); }
+    return;
+  }
+  loadQuestion();
+}
 // 「わからない」：答えを見て不正解扱いにする
 function soloGiveUp(){
   if(quiz.answered || !soloPendingVideo) return;
@@ -3715,6 +3780,13 @@ function renderStats(){
       <div class="stat-box"><div class="v">${avg.toFixed(1)}</div><div class="l">平均得点</div></div>
     </div>`}`;
 
+  // ソロの自己ベスト（この端末に保存されている分）
+  let bests=[];
+  try{ bests=Object.keys(localStorage).filter(k=>k.startsWith('iq_best_')).map(k=>({ id:k.slice(8), ...(lsGet(k,{})||{}) })).filter(b=>getList(b.id) && b.total); }catch(e){}
+  bests.sort((a,b)=>b.rate-a.rate);
+  document.getElementById('solo-bests-card').innerHTML=`<div class="card-title">ソロの自己ベスト（この端末）</div>`+(bests.length
+    ? bests.map(b=>`<div class="best-row"><span class="best-name">${escHtml(getList(b.id).name)}</span><span class="best-rate">${Math.round(b.rate*100)}%</span><span class="best-sub">${b.score}/${b.total}問${b.avg!=null?` ・ 平均${b.avg.toFixed(1)}秒`:''}</span></div>`).join('')
+    : '<div style="color:var(--color-muted); font-size:14px;">まだ記録がありません。「ひとりで練習」を最後まで遊ぶと記録されます。</div>');
   const ranked=STATE.users.filter(u=>u.stats && u.stats.games>0)
     .sort((a,b)=> (b.stats.wins-a.stats.wins) || (b.stats.totalScore-a.stats.totalScore));
   const el=document.getElementById('stats-ranking');
