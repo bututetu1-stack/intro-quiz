@@ -1015,7 +1015,7 @@
           <button class="submit-btn" onclick="submitMatchAnswer()">回答</button>
         </div>
         <div class="choice-grid" id="match-choice-grid" style="display:none;"></div>
-        <button class="btn-sub" style="width:100%; margin-top:10px;" onclick="passMatch()">わからない（パス）</button>
+        <button class="btn-sub" id="match-pass-btn" style="width:100%; margin-top:10px;" onclick="passMatch()">わからない（パス）</button>
       </div>
 
       <div class="match-wait" id="match-wait" style="display:none;"></div>
@@ -3438,6 +3438,7 @@ function renderMatch(id, room){
   if(!answerer && !matchLocal.claiming && !myPending) matchLocal.buzzSent=false;
   if(answerer!==me){ matchLocal.myTurn=false; matchLocal.answered=false; }
 
+  if(matchLocal.preTyping && answerer!==me && !(matchLocal.claiming || myPending)) endPreTyping();
   const buzzBtn=document.getElementById('match-buzz-btn');
   const ansWrap=document.getElementById('match-answer-wrap');
   const waitEl=document.getElementById('match-wait');
@@ -3479,7 +3480,15 @@ function renderMatch(id, room){
     if(!matchLocal.myTurn) document.getElementById('match-choice-grid').dataset.key='';   // 2回目の回答権では押せる状態から描き直す
     renderChoiceGrid('match-choice-grid', opts, 'chooseMatchOption');
     document.querySelector('#match-answer-wrap .answer-input-wrap').style.display=(opts&&opts.length>=2)?'none':'';
-    if(!matchLocal.myTurn){ matchLocal.myTurn=true; const inp=document.getElementById('match-answer-input'); inp.value=''; if(!(opts&&opts.length>=2)) inp.focus(); }
+    document.getElementById('match-pass-btn').style.display='';
+    if(!matchLocal.myTurn){
+      matchLocal.myTurn=true; const inp=document.getElementById('match-answer-input');
+      const queued=matchLocal.preTyping && matchLocal.queuedSubmit;
+      if(!matchLocal.preTyping) inp.value='';   // 判定中に入力した分は残す
+      matchLocal.preTyping=false; matchLocal.queuedSubmit=false;
+      if(!(opts&&opts.length>=2)) inp.focus();
+      if(queued) setTimeout(submitMatchAnswer, 0);
+    }
   } else if(answerer===me && matchLocal.answered){
     buzzBtn.style.display='none'; ansWrap.style.display='none';
     waitEl.style.display=''; waitEl.textContent='判定中...';
@@ -3488,6 +3497,8 @@ function renderMatch(id, room){
     buzzBtn.style.display='none'; ansWrap.style.display='none';
     waitEl.style.display='';
     waitEl.innerHTML=`<div style="font-size:18px; font-weight:700; color:var(--color-accent2);">🎤 ${escHtml(round.answererName||'相手')} さんが回答中...</div>`;
+  } else if((matchLocal.claiming || myPending) && matchLocal.preTyping){
+    buzzBtn.style.display='none'; waitEl.style.display='none'; showPreTyping();
   } else if(matchLocal.claiming || myPending){
     buzzBtn.style.display='none'; ansWrap.style.display='none';
     waitEl.style.display=''; waitEl.textContent='🔔 早押し！ 判定中...';
@@ -3546,6 +3557,15 @@ function buzz(){
   try{ matchPlayer.pauseVideo(); }catch(e){}
   document.getElementById('match-buzz-btn').style.display='none';
   const waitEl=document.getElementById('match-wait'); waitEl.style.display=''; waitEl.textContent='🔔 早押し！ 判定中...';
+  // 判定を待つ間に先に入力できるよう、タップと同時に入力欄を出してフォーカスする
+  // （iPhone はタップの処理の中でフォーカスしないとキーボードが開かない。4択はボタンなので不要）
+  const qq=g.questions[idx];
+  const choice=(room.settings||{}).choiceMode && Array.isArray(qq.options) && qq.options.length>=2;
+  if(!choice){
+    matchLocal.preTyping=true; matchLocal.queuedSubmit=false;
+    waitEl.style.display='none'; showPreTyping();
+    const inp=document.getElementById('match-answer-input'); inp.value=''; inp.focus();
+  }
   const elapsed=matchLocal.elapsed;
   // ここでは「押した」ことだけを書く。回答権は少し待ってから、再生位置がいちばん短い人に渡す（decideBuzz）
   db.ref(`rooms/${room.id}/game/rounds/${idx}`).transaction(cur=>{
@@ -3621,10 +3641,26 @@ function decideBuzz(id, idx, tries){
   }, false);
 }
 
+// 判定待ちの間の入力欄（回答ボタンは押せるが、送信は回答権が来てから）
+function showPreTyping(){
+  document.getElementById('match-answer-wrap').style.display='';
+  document.querySelector('#match-answer-wrap .answer-input-wrap').style.display='';
+  document.getElementById('match-pass-btn').style.display='none';
+  renderChoiceGrid('match-choice-grid', null);
+  document.getElementById('match-buzz-elapsed').textContent=matchLocal.queuedSubmit?'🔔 判定中…（回答権が来たらすぐ送信します）':'🔔 判定中…（先に入力できます）';
+}
+function endPreTyping(){
+  if(!matchLocal.preTyping) return;
+  matchLocal.preTyping=false; matchLocal.queuedSubmit=false;
+  const inp=document.getElementById('match-answer-input'); inp.value=''; inp.blur(); hideSuggest('match-answer-input');
+}
 function submitMatchAnswer(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
   const g=room.game; const idx=g.current; const me=getUser().uuid;
   const round=(g.rounds&&g.rounds[idx])||{};
+  if(round.answerer!==me && matchLocal.preTyping && document.getElementById('match-answer-input').value.trim()){
+    matchLocal.queuedSubmit=true; showPreTyping(); return;   // 回答権が来たら送る
+  }
   if(round.answerer!==me || matchLocal.answered) return;
   const ua=document.getElementById('match-answer-input').value.trim();
   if(!ua){ showToast('答えを入力してください','error'); return; }
