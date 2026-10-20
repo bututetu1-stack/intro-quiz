@@ -272,6 +272,9 @@
   .room-row:hover { border-color:var(--color-accent2); transform:translateX(2px); }
   .room-info { flex:1; min-width:0; }
   .room-name { font-weight:800; font-size:16px; }
+  .listen-opt { margin-top:14px; padding-top:12px; border-top:1px solid var(--color-border); }
+  .listen-opt[hidden] { display:none; }
+  .tile-listen { position:absolute; top:4px; left:6px; font-size:13px; }
   .room-status { display:inline-block; vertical-align:2px; margin-left:6px; font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap; }
   .room-status.lobby { background:rgba(52,211,153,0.16); color:var(--color-correct); }
   .room-status.playing { background:rgba(255,210,63,0.16); color:var(--color-accent); }
@@ -854,6 +857,13 @@
     <div class="card">
       <div class="card-title">参加者 <span id="lobby-player-count" style="color:var(--color-muted); font-weight:700;"></span></div>
       <div id="lobby-players" class="player-tiles"></div>
+      <div class="listen-opt" id="listen-opt" hidden>
+        <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleListenHost()">
+          <div class="toggle-track" id="listen-track"><div class="toggle-knob"></div></div>
+          <span style="font-size:13px; font-weight:700;">🔈 ホストの端末の音で聴く</span>
+        </div>
+        <div class="form-hint">同じ部屋でホストのスピーカーから聴くときにオン。この端末は音を出さず、早押しのタイムはホストの再生位置で測ります（スマホをボタン代わりに使えます）。</div>
+      </div>
     </div>
 
     <!-- ホスト専用設定 -->
@@ -1523,7 +1533,7 @@ const YT_API_KEY = "AIzaSyB7OK_8ozVW29QRW7UdfE2IJ86E5yV22B4";
 // グローバル状態
 // ============================================================
 const STATE = { lists: [], rooms: [], users: [], user: null, currentRoomId: null };
-const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest', soloCount: 'iq_solo_count', soloLimit: 'iq_solo_limit', hostSettings: 'iq_host_settings', soloChoice: 'iq_solo_choice', volume: 'iq_volume', muted: 'iq_muted', daily: 'iq_daily' };
+const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest', soloCount: 'iq_solo_count', soloLimit: 'iq_solo_limit', hostSettings: 'iq_host_settings', soloChoice: 'iq_solo_choice', volume: 'iq_volume', muted: 'iq_muted', daily: 'iq_daily', listenHost: 'iq_listen_host' };
 
 function lsGet(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
@@ -2633,7 +2643,7 @@ function joinRoom(id){
   if(!u.name){ pendingInviteRoomId=id; showToast('名前を設定すると部屋に参加します'); openProfileModal(); return; }
   const already=!!(room.players&&room.players[u.uuid]);
   if(room.status==='playing' && !already) setTimeout(()=>showToast('対戦の途中から参加しました。今の問題から答えられます','success'), 400);
-  db.ref(`rooms/${id}/players/${u.uuid}`).set({ uuid:u.uuid, name:u.name, joinedAt:Date.now() })
+  db.ref(`rooms/${id}/players/${u.uuid}`).set({ uuid:u.uuid, name:u.name, joinedAt:Date.now(), ...(listenHostOn()?{ listen:true }:{}) })
     .then(()=>{ document.getElementById('join-code').value=''; enterLobby(id); });
 }
 // 招待リンク（?room=コード）。非公開部屋は合言葉を使う
@@ -2688,6 +2698,28 @@ function handleStartupJoin(){
 let pendingInviteRoomId=null;
 
 let lobbyRef=null;
+// ===== ホストの端末の音で聴く（同じ部屋で1台のスピーカーを囲む遊び方） =====
+// 自分の端末の再生位置ではなくホストの再生位置で早押しのタイムを測る（自分の端末の遅れで有利にならないように）
+function listenHostOn(){ return lsGet(LS.listenHost,false)===true; }
+function listenActive(room){
+  room=room||STATE.rooms.find(r=>r.id===STATE.currentRoomId);
+  return !!room && listenHostOn() && room.hostUuid!==getUser().uuid;
+}
+function toggleListenHost(){
+  const on=!listenHostOn(); lsSet(LS.listenHost, on);
+  const id=STATE.currentRoomId; if(id) db.ref(`rooms/${id}/players/${getUser().uuid}/listen`).set(on||null).catch(()=>{});
+  syncListenUI(); applyVolume();
+  showToast(on?'ホストの端末の音で聴きます（この端末は無音）':'この端末で音を出します');
+}
+function syncListenUI(){
+  const on=listenHostOn();
+  document.getElementById('listen-track').classList.toggle('on', on); refreshToggleAria();
+}
+// 回答権の判定・締め切りで使う「その人の再生開始時刻」（ホストの音で聴く人はホストの値）
+function playerT0(round, room, u){
+  const pl=(room.players||{})[u]||{}, pos=round.pos||{};
+  return (pl.listen && u!==room.hostUuid) ? pos[room.hostUuid] : pos[u];
+}
 function enterLobby(id){
   STATE.currentRoomId=id;
   lsSet(LS.room, id);
@@ -2748,13 +2780,15 @@ function renderLobby(id, room){
   const tilesHtml=players.map(p=>{
     const isNew=!seen.has(p.uuid);
     const crown=p.uuid===room.hostUuid?'<span class="tile-crown" title="ホスト">👑</span>':'';
-    return `<div class="player-tile${isNew?' new':''}${p.uuid===u.uuid?' me':''}">${crown}<div class="tile-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</div><div class="tile-name">${escHtml(p.name||'?')}${p.uuid===u.uuid?'（あなた）':''}</div></div>`;
+    const ear=(p.listen && p.uuid!==room.hostUuid)?'<span class="tile-listen" title="ホストの端末の音で聴く">🔈</span>':'';
+    return `<div class="player-tile${isNew?' new':''}${p.uuid===u.uuid?' me':''}">${crown}${ear}<div class="tile-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</div><div class="tile-name">${escHtml(p.name||'?')}${p.uuid===u.uuid?'（あなた）':''}</div></div>`;
   }).join('');
   const lp=document.getElementById('lobby-players');
-  const key=players.map(p=>p.uuid+':'+p.name).join(',')+'|'+room.hostUuid;
+  const key=players.map(p=>p.uuid+':'+p.name+':'+(p.listen?1:0)).join(',')+'|'+room.hostUuid;
   if(lp.dataset.key!==key){ lp.innerHTML=tilesHtml; lp.dataset.key=key; players.forEach(p=>seen.add(p.uuid)); }
 
   document.getElementById('lobby-host-settings').style.display=isHost?'':'none';
+  document.getElementById('listen-opt').hidden=isHost; if(!isHost) syncListenUI();
   if(!isHost) document.getElementById('lobby-settings-summary').innerHTML=settingsSummaryHtml(room.settings||{});
   // ホスト：画面下に「▶ 対戦を開始」を固定
   document.getElementById('lobby-cta').hidden=!isHost;
@@ -3069,7 +3103,7 @@ function applyVolume(pl, rate=1){
   (pl?[pl]:[matchPlayer, soloPlayer]).forEach(x=>{ try{
     if(!x || !x.setVolume) return;
     x.setVolume(Math.round(musicVolume()*rate));
-    if(musicMuted()) x.mute(); else x.unMute();
+    if(musicMuted() || (x===matchPlayer && listenActive())) x.mute(); else x.unMute();
   }catch(e){} });
 }
 function setMusicVolume(v){
@@ -3421,7 +3455,7 @@ function rejoinCurrentRoom(){
   db.ref(`rooms/${id}/status`).once('value').then(s=>{
     if(!s.exists() || STATE.currentRoomId!==id) return;   // 部屋がなくなっていたら作り直さない
     ref.onDisconnect().remove();
-    ref.set({ uuid:u.uuid, name:u.name, joinedAt:STATE.myJoinedAt||Date.now() });
+    ref.set({ uuid:u.uuid, name:u.name, joinedAt:STATE.myJoinedAt||Date.now(), ...(listenHostOn()?{ listen:true }:{}) });
   }).catch(()=>{});
 }
 // 誰もいない部屋の片付け（60秒以上ずっと空なら削除。リロード中の一瞬の空は消さない）
@@ -3602,7 +3636,7 @@ function renderMatch(id, room){
       buzzBtn.disabled=true;
       const upd=()=>{ const rem=(lockUntil-serverNow())/1000; if(rem<=0){ if(buzzCountdownInt){clearInterval(buzzCountdownInt);buzzCountdownInt=null;} buzzBtn.disabled=false; setBuzzLabel(buzzBtn,'🔔','早押し！',true); } else { setBuzzLabel(buzzBtn,'⏳',`${rem.toFixed(1)}秒`,false); } };
       upd(); buzzCountdownInt=setInterval(upd,100);
-    } else if(!matchStarted){
+    } else if(!matchStarted && !(listenActive(room) && round.pos && round.pos[room.hostUuid]!=null)){
       buzzBtn.disabled=true; setBuzzLabel(buzzBtn,'♪','再生待ち',false);
     } else {
       buzzBtn.disabled=false; setBuzzLabel(buzzBtn,'🔔','早押し！',true);
@@ -3641,12 +3675,13 @@ function buzz(){
   if(round.answerer || round.resolved) return;
   if(((round.lockouts&&round.lockouts[me])||0)>serverNow()) return;
   if(matchLocal.buzzSent) return;
-  if(!matchStarted){ showToast('再生開始までお待ちください','error'); return; }
+  const listen=listenActive(room), hostT0=(round.pos||{})[room.hostUuid];
+  if(!matchStarted && !(listen && hostT0!=null)){ showToast('再生開始までお待ちください','error'); return; }
   if(round.buzzes && round.buzzes[me]) return;
   if(!isOnline){ showToast('通信が切れているため早押しできません','error'); return; }
   lastBuzzTapAt=performance.now();
   matchLocal.buzzSent=true; matchLocal.claiming=true;
-  matchLocal.elapsed=matchCurrentTime();
+  matchLocal.elapsed=(listen && hostT0!=null) ? Math.max(0,(serverNow()-safeNum(hostT0))/1000) : matchCurrentTime();
   vibrate(40);
   try{ matchPlayer.pauseVideo(); }catch(e){}
   document.getElementById('match-buzz-btn').style.display='none';
@@ -3685,19 +3720,20 @@ function buzz(){
 // 待っている間、ほかの人には誰かが押したことを見せない（それを合図に遅れている端末が押せてしまうため）
 function reportMatchPos(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); const g=room&&room.game;
-  if(!g || g.phase!=='play' || matchEnded) return;
+  if(!g || g.phase!=='play' || matchEnded || listenActive(room)) return;
   const t=matchCurrentTime(); if(!(t>=0)) return;
   db.ref(`rooms/${room.id}/game/rounds/${g.current}/pos/${getUser().uuid}`).set(Math.round(serverNow()-t*1000)).catch(()=>{});
 }
 // 回答権を決める時刻（サーバー時刻）
-function buzzDecideAt(round, playerIds){
+function buzzDecideAt(round, room){
+  const playerIds=Object.keys(room.players||{});
   const bz=round.buzzes||{}; const ids=Object.keys(bz); if(!ids.length) return null;
   const open=safeNum(round.buzzOpenAt, serverNow());
   const best=Math.min(...ids.map(u=>safeNum(bz[u]&&bz[u].e, 9999)));
   let t=open+BUZZ_MARGIN_MS;
   playerIds.forEach(u=>{
     if(bz[u] || ((round.lockouts||{})[u]||0)>open) return;   // 押した人・ペナルティ中の人は待たない
-    const t0=(round.pos||{})[u]; if(t0==null) return;        // まだ再生していない人は待たない
+    const t0=playerT0(round, room, u); if(t0==null) return;   // まだ再生していない人は待たない
     t=Math.max(t, safeNum(t0)+best*1000+BUZZ_MARGIN_MS);      // この人の再生位置が最短タイムを超える時刻
   });
   return Math.min(t, open+BUZZ_MAX_WAIT_MS);
@@ -3715,7 +3751,7 @@ function scheduleBuzzDecide(id, room){
   const pending=g.phase==='play' && !round.answerer && !round.resolved && round.buzzes && Object.keys(round.buzzes).length>0;
   if(buzzDecideTimer){ clearTimeout(buzzDecideTimer); buzzDecideTimer=null; }
   if(!pending || !(round.buzzes[me] || room.hostUuid===me)) return;
-  const at=buzzDecideAt(round, Object.keys(room.players||{}));
+  const at=buzzDecideAt(round, room);
   buzzDecideTimer=setTimeout(()=>{ buzzDecideTimer=null; decideBuzz(id, idx, 0); }, Math.max(0, at-serverNow()));
 }
 function decideBuzz(id, idx, tries){
@@ -3725,7 +3761,7 @@ function decideBuzz(id, idx, tries){
   db.ref(`rooms/${id}/game/rounds/${idx}`).transaction(cur=>{
     early=false;
     if(!cur || cur.answerer || cur.resolved || !cur.buzzes) return;
-    if(serverNow() < buzzDecideAt(cur, players)-20){ early=true; return; }   // まだ早い（時計のずれ）→ 少し後でもう一度
+    if(serverNow() < buzzDecideAt(cur, room)-20){ early=true; return; }   // まだ早い（時計のずれ）→ 少し後でもう一度
     const w=pickBuzzWinner(cur, players);
     if(w){ cur.answerer=w[0]; cur.answererName=w[1].name||'?'; cur.answererElapsed=safeNum(w[1].e,null); cur.answerStartAt=serverNow(); cur.lastBuzzes=cur.buzzes; }
     cur.buzzes=null; cur.buzzOpenAt=null;
@@ -3848,7 +3884,7 @@ function maybeHostTimeout(id, room){
   if(hostEndKey!==key){ hostEndKey=key; hostEndSince=now; }
   const me=getUser().uuid, limitMs=currentSongLimit()*1000, pos=round.pos||{};
   let until=0;
-  Object.keys(room.players||{}).forEach(u=>{ if(u!==me && pos[u]!=null) until=Math.max(until, safeNum(pos[u])+limitMs); });
+  Object.keys(room.players||{}).forEach(u=>{ const t0=playerT0(round, room, u); if(u!==me && t0!=null) until=Math.max(until, safeNum(t0)+limitMs); });
   if(now<Math.min(until, hostEndSince+HOST_END_WAIT_MAX_MS)) return;   // まだ聴いている人がいる
   if(matchTimerInt){ clearInterval(matchTimerInt); matchTimerInt=null; } // 多重発火防止
   hostReveal(id, room, null);
