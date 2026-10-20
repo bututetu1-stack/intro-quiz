@@ -26,11 +26,11 @@ const fnSrc=(name)=>{ const m=new RegExp('function '+name+'\\([^)]*\\)\\{').exec
   let i=m.index+m[0].length, depth=1; while(depth>0 && i<scripts.length){ const c=scripts[i++]; if(c==='{') depth++; else if(c==='}') depth--; } return scripts.slice(m.index,i); };
 const code=[
   pick('// ===== 曲名の自動判定（YouTubeの動画タイトル','function extractPlaylistId'),
-  fnSrc('normalize'), fnSrc('makeOptions'), fnSrc('seededRand'), fnSrc('answerVariants'), fnSrc('editDistance'), fnSrc('answerMatches'), fnSrc('applySearchConsensus'),
-  'globalThis.__t={ guessSongName, normalize, makeOptions, seededRand, playableSong, answerMatches, applySearchConsensus };'
+  fnSrc('normalize'), fnSrc('makeOptions'), fnSrc('seededRand'), fnSrc('answerVariants'), fnSrc('editDistance'), fnSrc('answerMatches'), fnSrc('applySearchConsensus'), fnSrc('hintMask'),
+  'globalThis.__t={ guessSongName, normalize, makeOptions, seededRand, playableSong, answerMatches, applySearchConsensus, hintMask };'
 ].join('\n');
 const ctx={}; vm.createContext(ctx); vm.runInContext(code, ctx);
-const { guessSongName, normalize, makeOptions, seededRand, playableSong, answerMatches, applySearchConsensus }=ctx.__t;
+const { guessSongName, normalize, makeOptions, seededRand, playableSong, answerMatches, applySearchConsensus, hintMask }=ctx.__t;
 
 // 3) 曲名の自動判定
 const readTsv=f=>fs.readFileSync(path.join(__dirname,f),'utf8').split(/\r?\n/).filter(Boolean).map(l=>l.split('\t'));
@@ -65,6 +65,10 @@ ok(sr.every(r=>r.song==='夜に駆ける'), '検索結果の多数決：「YOASO
 const sr2=[{title:'YOASOBI「アイドル」 Official Music Video',channel:'YOASOBI'},{title:'YOASOBI「群青」Official Music Video',channel:'YOASOBI'}];
 applySearchConsensus(sr2);
 ok(sr2[0].song==='アイドル' && sr2[1].song==='群青', '検索結果の多数決：別々の曲はそのまま');
+
+// ソロのヒント
+ok(hintMask('夜に駆ける',0)==='○○○○○' && hintMask('夜に駆ける',1)==='夜○○○○', 'ヒント：文字数と1文字目');
+ok(hintMask('Bad ∞ End',1)==='B○○ ∞ ○○○', 'ヒント：記号と空白は見せる');
 
 // 5) 回答の判定
 for(const [ua, ans, yomi, exp, why] of [
