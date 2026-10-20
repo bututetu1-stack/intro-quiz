@@ -4,6 +4,7 @@
 //  - 曲名の自動判定（guessSongName）：手作りの例は全問、実際の YouTube タイトルは基準点以上
 //    （song-name-vocaloid.tsv はチャンネル名なし。正解が動画タイトルのままの曲を出題時に補正する playableSong 用）
 //  - 回答の表記ゆれ吸収（normalize）
+//  - 回答の判定（answerMatches）：副題の省略・長い曲名の打ち間違いは正解、短い曲名は厳しく
 //  - 4択の選択肢（makeOptions）
 //  - 今日のチャレンジの乱数（seededRand）：同じ日付なら同じ並び
 const fs=require('fs'), path=require('path'), vm=require('vm'), cp=require('child_process'), os=require('os');
@@ -25,11 +26,11 @@ const fnSrc=(name)=>{ const m=new RegExp('function '+name+'\\([^)]*\\)\\{').exec
   let i=m.index+m[0].length, depth=1; while(depth>0 && i<scripts.length){ const c=scripts[i++]; if(c==='{') depth++; else if(c==='}') depth--; } return scripts.slice(m.index,i); };
 const code=[
   pick('// ===== 曲名の自動判定（YouTubeの動画タイトル','function extractPlaylistId'),
-  fnSrc('normalize'), fnSrc('makeOptions'), fnSrc('seededRand'),
-  'globalThis.__t={ guessSongName, normalize, makeOptions, seededRand, playableSong };'
+  fnSrc('normalize'), fnSrc('makeOptions'), fnSrc('seededRand'), fnSrc('answerVariants'), fnSrc('editDistance'), fnSrc('answerMatches'),
+  'globalThis.__t={ guessSongName, normalize, makeOptions, seededRand, playableSong, answerMatches };'
 ].join('\n');
 const ctx={}; vm.createContext(ctx); vm.runInContext(code, ctx);
-const { guessSongName, normalize, makeOptions, seededRand, playableSong }=ctx.__t;
+const { guessSongName, normalize, makeOptions, seededRand, playableSong, answerMatches }=ctx.__t;
 
 // 3) 曲名の自動判定
 const readTsv=f=>fs.readFileSync(path.join(__dirname,f),'utf8').split(/\r?\n/).filter(Boolean).map(l=>l.split('\t'));
@@ -57,13 +58,26 @@ for(const [a,c] of [['てすと５','テスト5'],['ﾃｽﾄ','テスト'],['�
   ok(normalize(a)===normalize(c), `normalize: 「${a}」＝「${c}」`);
 ok(normalize('アイドル')!==normalize('アイロン'), 'normalize: 違う曲名は一致しない');
 
-// 5) 4択
+// 5) 回答の判定
+for(const [ua, ans, yomi, exp, why] of [
+  ['夜に駆ける', ['夜に駆ける'], [], true, '完全一致'],
+  ['よるにかける', ['夜に駆ける'], ['よるにかける'], true, 'よみがな'],
+  ['lemon', ['Lemon (Remix)'], [], true, '括弧の副題を省略'],
+  ['残酷な天使のテーゼ', ['残酷な天使のテーゼ -Director\'s Edit Version-'], [], true, '末尾の -〜- を省略'],
+  ['夜に掛ける', ['夜に駆ける'], [], true, '5文字以上は1文字の打ち間違いまで'],
+  ['ワールズエンドダンスホル', ['ワールズエンド・ダンスホール'], [], true, '10文字以上は2文字まで'],
+  ['アイロン', ['アイドル'], [], false, '4文字以下は打ち間違いを許さない'],
+  ['夜に掛けた', ['夜に駆ける'], [], false, '5文字で2文字違いは不正解'],
+  ['', ['夜に駆ける'], [], false, '空欄は不正解'],
+]) ok(answerMatches(ua, ans, yomi)===exp, `回答の判定：${why}（「${ua}」→ ${exp?'正解':'不正解'}）`);
+
+// 6) 4択
 const opts=makeOptions('夜に駆ける',['夜に駆ける','よるにかける','アイドル','群青','怪物','ハルジオン']);
 ok(opts.length===4 && opts.includes('夜に駆ける'), '4択：正解を含む4つ');
 ok(new Set(opts.map(normalize)).size===4, '4択：同じ表記の選択肢を重ねない');
 ok(makeOptions('A',['A']).length===1, '4択：候補が足りなければ少なくなる（画面側で入力欄に切り替える）');
 
-// 6) 今日のチャレンジ
+// 7) 今日のチャレンジ
 const seq=s=>{ const r=seededRand(s); return Array.from({length:8},()=>r()); };
 ok(JSON.stringify(seq('iq-daily:2026-10-21'))===JSON.stringify(seq('iq-daily:2026-10-21')), '今日のチャレンジ：同じ日付なら同じ乱数列（全員同じ曲）');
 ok(JSON.stringify(seq('iq-daily:2026-10-21'))!==JSON.stringify(seq('iq-daily:2026-10-22')), '今日のチャレンジ：日付が違えば別の乱数列');

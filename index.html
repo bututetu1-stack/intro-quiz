@@ -3584,7 +3584,7 @@ function submitMatchAnswer(){
   const ua=document.getElementById('match-answer-input').value.trim();
   if(!ua){ showToast('答えを入力してください','error'); return; }
   const q=g.questions[idx];
-  const correct=[...(q.answers||[]),...(q.yomigana||[])].map(normalize).includes(normalize(ua));
+  const correct=answerMatches(ua, q.answers, q.yomigana);
   sendAnswer(room, idx, ua, correct);
 }
 // 4択モード：選んだ曲名で回答
@@ -4349,6 +4349,36 @@ function ensureSoloPlayer(cb){
 }
 // NFKC で全角英数字→半角、半角カナ→全角カナに揃えてから比較する
 function normalize(s){ return s.normalize('NFKC').toLowerCase().replace(/[ぁ-ゖ]/g,c=>String.fromCharCode(c.charCodeAt(0)+96)).replace(/[^\p{L}\p{N}]/gu,''); }
+// ===== 回答の判定 =====
+// 表記ゆれ（normalize）に加えて、括弧の副題の省略（「Lemon (Remix)」→「Lemon」）と、
+// 長い曲名の打ち間違い（5文字以上は1文字、10文字以上は2文字まで）を正解にする
+function answerVariants(list){
+  const out=new Set();
+  (list||[]).forEach(a=>{
+    a=String(a||''); const k=normalize(a); if(k) out.add(k);
+    const base=a.replace(/\s*[(（\[［【〔][^)）\]］】〕]*[)）\]］】〕]\s*/g,' ').replace(/\s+[-－~～〜][^-－~～〜]+[-－~～〜]\s*$/,' ').trim();
+    const kb=normalize(base); if(kb.length>=2) out.add(kb);
+  });
+  return [...out];
+}
+// 2つの文字列の編集距離（max を超えたら打ち切る）
+function editDistance(a,b,max){
+  if(Math.abs(a.length-b.length)>max) return max+1;
+  let prev=Array.from({length:b.length+1},(_,j)=>j);
+  for(let i=1;i<=a.length;i++){
+    const cur=[i]; let rowMin=i;
+    for(let j=1;j<=b.length;j++){ cur[j]=Math.min(prev[j]+1, cur[j-1]+1, prev[j-1]+(a[i-1]===b[j-1]?0:1)); if(cur[j]<rowMin) rowMin=cur[j]; }
+    if(rowMin>max) return max+1;
+    prev=cur;
+  }
+  return prev[b.length];
+}
+function answerMatches(input, answers, yomigana){
+  const u=normalize(String(input||'')); if(!u) return false;
+  const keys=answerVariants([...(answers||[]),...(yomigana||[])]);
+  if(keys.includes(u)) return true;
+  return keys.some(k=>{ const tol=k.length>=10?2:k.length>=5?1:0; return tol>0 && editDistance(k,u,tol)<=tol; });
+}
 // 再生できない曲を飛ばす（不正解にはせず、出題数から外す）
 function soloSkipSong(){
   if(quiz.timer){ clearInterval(quiz.timer); quiz.timer=null; }
@@ -4379,8 +4409,7 @@ function submitAnswer(giveUp){
   const input=document.getElementById('answer-input'); const ua=input.value.trim();
   if(!ua){ showToast('答えを入力してください','error'); return; }
   const s=quiz.songs[quiz.current];
-  const candidates=[...(s.answers||[]),...(s.yomigana||[])].map(normalize);
-  const isCorrect=giveUp!==true && candidates.includes(normalize(ua));
+  const isCorrect=giveUp!==true && answerMatches(ua, s.answers, s.yomigana);
   document.getElementById('solo-giveup-btn').style.display='none';
   quiz.answered=true; if(quiz.timer) clearInterval(quiz.timer);
   if(soloStopTimer) clearTimeout(soloStopTimer);
