@@ -2171,7 +2171,7 @@ function renderDetailSongs(){
 // ============================================================
 // 部屋（オンライン）
 // ============================================================
-function publicRooms(){ return STATE.rooms.filter(r => r.visibility==='public' && r.status==='lobby'); }
+function publicRooms(){ return STATE.rooms.filter(r => r.visibility==='public' && r.status==='lobby' && r.players && Object.keys(r.players).length); }
 
 function renderRoomsList(){
   const el=document.getElementById('rooms-list'); const rooms=publicRooms();
@@ -2276,10 +2276,10 @@ function enterLobby(id){
   STATE.currentRoomId=id;
   lsSet(LS.room, id);
   const u=getUser();
-  // 退出時の自動クリーンアップ
-  const isHost = STATE.rooms.find(r=>r.id===id)?.hostUuid===u.uuid;
-  if(isHost) db.ref('rooms/'+id).onDisconnect().remove();
-  else db.ref(`rooms/${id}/players/${u.uuid}`).onDisconnect().remove();
+  // 切断時は自分の参加情報だけを外す（ホストも同じ。ホストが戻らなければ他の人が引き継ぐ）
+  const me0=(STATE.rooms.find(r=>r.id===id)?.players||{})[u.uuid];
+  STATE.myJoinedAt=(me0&&me0.joinedAt)||Date.now();
+  db.ref(`rooms/${id}/players/${u.uuid}`).onDisconnect().remove();
 
   // この部屋を購読
   if(lobbyRef) lobbyRef.off();
@@ -2860,11 +2860,62 @@ async function fetchChorusStart(videoId){
 // ============================================================
 // 対戦：状態ルーティング
 // ============================================================
+// ===== ホストの引き継ぎ =====
+// ホストの参加情報が消えた（切断した）まま8秒戻らなければ、最も早く入室した人がホストを引き継ぐ。
+// 全員が同じ順番で判断し、トランザクションで1人だけが成功する。リロード程度なら8秒以内に戻るのでそのまま
+const HOST_GRACE_MS=8000;
+let hostClaimTimer=null, hostClaimKey=null;
+function maybeClaimHost(id, room){
+  const players=room.players||{};
+  if(players[room.hostUuid]){ if(hostClaimTimer){ clearTimeout(hostClaimTimer); hostClaimTimer=null; } hostClaimKey=null; return; }
+  const me=getUser().uuid; if(!players[me]) return;
+  const order=Object.values(players).sort((a,b)=>(a.joinedAt||0)-(b.joinedAt||0));
+  if(!order.length || order[0].uuid!==me) return;
+  const key=id+':'+room.hostUuid; if(hostClaimKey===key) return; hostClaimKey=key;
+  if(hostClaimTimer) clearTimeout(hostClaimTimer);
+  hostClaimTimer=setTimeout(()=>{
+    hostClaimTimer=null;
+    db.ref('rooms/'+id).transaction(r=>{
+      if(!r || !r.players || !r.players[me]) return;       // 部屋がない・自分がいない → 中止
+      if(r.players[r.hostUuid]) return;                      // ホストが戻った → 中止
+      r.hostUuid=me; r.hostName=getUser().name; return r;
+    }, (err, committed)=>{ if(committed) showToast('ホストが抜けたため、あなたがホストになりました','success'); });
+  }, HOST_GRACE_MS);
+}
+// ホストが替わったら知らせる
+const lastHostOf={};
+function noticeHostChange(id, room){
+  const prev=lastHostOf[id]; lastHostOf[id]=room.hostUuid;
+  if(prev && prev!==room.hostUuid && room.hostUuid!==getUser().uuid) showToast(`${room.hostName||'?'} さんが新しいホストになりました`);
+}
+// 通信が戻ったら、部屋にいる自分の参加情報を戻す（スマホの一時的な切断で抜けたままにならないように）
+function rejoinCurrentRoom(){
+  const id=STATE.currentRoomId; if(!id) return;
+  const u=getUser(); const ref=db.ref(`rooms/${id}/players/${u.uuid}`);
+  db.ref(`rooms/${id}/status`).once('value').then(s=>{
+    if(!s.exists() || STATE.currentRoomId!==id) return;   // 部屋がなくなっていたら作り直さない
+    ref.onDisconnect().remove();
+    ref.set({ uuid:u.uuid, name:u.name, joinedAt:STATE.myJoinedAt||Date.now() });
+  }).catch(()=>{});
+}
+// 誰もいない部屋の片付け（60秒以上ずっと空なら削除。リロード中の一瞬の空は消さない）
+const emptySince={};
+function gcEmptyRooms(){
+  const now=Date.now();
+  STATE.rooms.forEach(r=>{
+    const empty=!r.players || !Object.keys(r.players).length || !r.status;
+    if(!empty){ delete emptySince[r.id]; return; }
+    if(!emptySince[r.id]){ emptySince[r.id]=now; return; }
+    if(now-emptySince[r.id]>60000){ delete emptySince[r.id]; db.ref('rooms/'+r.id).remove().catch(()=>{}); }
+  });
+}
 function renderRoomState(id, room){
   if(!room){
     if(STATE.currentRoomId===id){ showToast('部屋が解散されました','error'); cleanupMatch(); STATE.currentRoomId=null; lsSet(LS.room, null); showPage('rooms'); }
     return;
   }
+  noticeHostChange(id, room);
+  maybeClaimHost(id, room);
   if(room.status==='lobby'){
     if(matchLocal.idx!==-1) cleanupMatch();
     showPage('room-lobby'); renderLobby(id, room);
@@ -4014,11 +4065,13 @@ function boot(){
     const dot=document.getElementById('conn-dot');
     dot.className='conn-dot '+(online?'online':'offline');
     dot.title=online?'サーバー接続中':'オフライン';
+    if(online) rejoinCurrentRoom();
   });
 
   // データ購読
   db.ref('lists').on('value', snap=>{ STATE.lists=objToArr(snap.val()); refreshActiveViews(); });
-  db.ref('rooms').on('value', snap=>{ STATE.rooms=objToArr(snap.val()); refreshActiveViews(); });
+  db.ref('rooms').on('value', snap=>{ STATE.rooms=objToArr(snap.val()); refreshActiveViews(); gcEmptyRooms(); });
+  setInterval(gcEmptyRooms, 20000);
   db.ref('users').on('value', snap=>{ STATE.users=objToArr(snap.val()); refreshActiveViews(); });
 
   // 初回接続を待ってスプラッシュを閉じる
