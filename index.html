@@ -388,6 +388,10 @@
   .stand-row:nth-child(1) .stand-rank { color:var(--color-accent); }
   .stand-name { flex:1; font-weight:800; }
   .stand-score { font-family:var(--font-display); font-weight:700; font-size:24px; color:var(--color-accent); }
+  .delta, .rank-move { font-size:12px; font-weight:800; padding:2px 8px; border-radius:999px; animation:popIn .4s cubic-bezier(.2,1.5,.4,1) both; }
+  .delta.up { color:#062b1d; background:var(--color-correct); } .delta.down { color:#fff; background:var(--color-wrong); }
+  .rank-move.up { color:var(--color-correct); } .rank-move.down { color:var(--color-wrong); }
+  .song-search { max-width:220px; border-radius:999px; padding:8px 14px; }
   .fallback-play { display:block; margin:10px auto 0; }
 
   /* ===== 結果（ソロ） ===== */
@@ -1082,6 +1086,7 @@
       </div>
       <div class="head-actions">
         <button class="btn-primary" id="detail-play" onclick="quickPlaySolo(currentListId)">▶ このリストで遊ぶ</button>
+        <button class="btn-sub" id="detail-copy-list" onclick="duplicateList()" style="padding:10px 16px; font-size:13px;" title="このリストを自分用（個人用）にコピーして、曲を追加・削除できるようにします">📄 複製</button>
         <button class="btn-sub" id="detail-delete-list" onclick="confirmDeleteList()" style="padding:10px 16px; font-size:13px;">削除</button>
       </div>
     </div>
@@ -1155,6 +1160,7 @@
 
     <div class="section-head" style="margin-top:8px;">
       <h2>🎵 曲 <span id="detail-song-count" style="color:var(--color-muted); font-size:14px;">0 曲</span></h2>
+      <input class="form-input song-search" id="song-search" type="search" placeholder="🔍 曲を検索" oninput="renderDetailSongs()" style="display:none;">
       <button class="btn-sub" id="detail-autoname" onclick="openAutoname()" style="padding:8px 14px; font-size:13px;" title="動画タイトルから曲名を判定し、よみがなも付けて、正解をまとめて整えます">🪄 曲名・よみを自動入力</button>
     </div>
     <div id="detail-songs"></div>
@@ -1529,7 +1535,16 @@ function openListDetail(id){
   document.getElementById('detail-autoname').style.display=editable?'':'none';
   // 曲がまだないリストは「追加」を目立たせる（プレイリストのタブから）
   setAddTab((list.songs||[]).length?addTabLast:'playlist');
+  document.getElementById('song-search').value='';
   resetSongForm(); renderDetailSongs(); showPage('list-detail');
+}
+// リストを自分用（個人用）に複製する。人のリストを元に曲を足したり減らしたりできる
+function duplicateList(){
+  const src=getList(currentListId); if(!src) return;
+  const u=getUser(); if(!u.name){ showToast('先に名前を設定してください','error'); openProfileModal(); return; }
+  const id=genUuid();
+  const copy={ id, ownerUuid:u.uuid, ownerName:u.name, name:src.name+'（コピー）', visibility:'personal', songs:(src.songs||[]).map(s=>({ ...s, id:genUuid() })), createdAt:Date.now() };
+  saveListToCloud(copy).then(()=>{ showToast('自分用（個人用）のリストとして複製しました','success'); openListDetail(id); }).catch(()=>showToast('複製できませんでした','error'));
 }
 // 曲の追加方法のタブ（プレイリスト／URLをまとめて／1曲ずつ）
 let addTabLast='playlist';
@@ -2122,8 +2137,13 @@ function renderDetailSongs(){
   const songs=list.songs||[];
   document.getElementById('detail-song-count').textContent=`${songs.length} 曲`;
   document.getElementById('detail-play').style.display=songs.length?'':'none';
+  // 曲が多いリストは検索できるように（曲名・正解・よみがなで絞り込む）
+  const search=document.getElementById('song-search'); search.style.display=songs.length>8?'':'none';
+  const q=songs.length>8?normalize(search.value||''):'';
   if(songs.length===0){ el.innerHTML=`<div class="empty-list">まだ曲がありません${editable?'。上の「＋ 曲を追加」から、YouTube のプレイリストをまるごと取り込めます。':''}</div>`; return; }
-  el.innerHTML=songs.map((s,i)=>{
+  const shown=songs.map((s,i)=>({ s, i })).filter(({s})=>!q || [s.title, ...(s.answers||[]), ...(s.yomigana||[])].some(t=>normalize(String(t||'')).includes(q)));
+  if(q && !shown.length){ el.innerHTML='<div class="empty-list">見つかりませんでした</div>'; return; }
+  el.innerHTML=shown.map(({s,i})=>{
     const sub=[ (s.answers||[]).join(' / '), (s.yomigana||[]).length?`よみ: ${s.yomigana.join(' / ')}`:'' , s.chorusStart!=null?`サビ: ${s.chorusStart}秒`:''].filter(Boolean).join('　');
     const thumb=`https://img.youtube.com/vi/${s.videoId}/mqdefault.jpg`;
     return `<div class="song-row">
@@ -2476,6 +2496,7 @@ const SFX=(()=>{
     correct(){ [523,659,784,1047].forEach((f,i)=>tone(f,i*0.08,0.35,{type:'triangle',vol:0.22})); tone(1568,0.32,0.5,{type:'sine',vol:0.12}); },
     wrong(){ tone(185,0,0.5,{type:'sawtooth',vol:0.12}); tone(175,0,0.5,{type:'square',vol:0.07}); },             // ブブー
     tick(){ tone(988,0,0.07,{type:'sine',vol:0.1}); },
+    start(){ tone(784,0,0.09,{type:'triangle',vol:0.14}); tone(1175,0.08,0.22,{type:'triangle',vol:0.14}); },   // 出題「ジャン」
     fanfare(){
       [[392,0,0.12],[392,0.13,0.12],[392,0.26,0.12],[523,0.4,0.6],[659,0.62,0.3],[784,0.8,0.8]]
         .forEach(([f,s,d])=>{ tone(f,s,d,{type:'square',vol:0.08}); tone(f/2,s,d,{type:'triangle',vol:0.1}); });
@@ -3183,7 +3204,10 @@ function renderReveal(id, room){
       <span class="sub-time">${s.elapsed!=null?s.elapsed.toFixed(2)+'秒':'—'}</span>
     </div>`).join('') : '<div class="sub-row" style="color:var(--color-muted);">回答なし</div>';
 
-  renderStandings('reveal-standings', room, false);
+  // この問題の前の得点（前の問題の結果発表で見た得点）と比べて、増えた点数と順位の上下を出す
+  const hist=revealHistory[id]||(revealHistory[id]={});
+  if(!hist[idx]) hist[idx]={ ...(g.scores||{}) };
+  renderStandings('reveal-standings', room, false, idx===0?{}:(hist[idx-1]||null));
 
   // サビ再生（時間切れ・正解どちらでも。本編は必ず止める）
   const settings=room.settings||{};
@@ -3388,17 +3412,28 @@ function renderAwards(room){
   el.innerHTML=awards.map(a=>`<div class="award"><div class="award-icon">${a.icon}</div><div class="award-title">${a.title}</div><div class="award-name">${escHtml(a.name)}</div><div class="award-val">${a.val}</div></div>`).join('');
 }
 
-function renderStandings(elId, room, final){
+const revealHistory={};   // 部屋ごと・問題ごとの得点（順位の上下の計算用）
+function renderStandings(elId, room, final, prevScores){
   const players=Object.values(room.players||{});
   const scores=room.game?.scores||{};
   const sorted=[...players].sort((a,b)=>(scores[b.uuid]||0)-(scores[a.uuid]||0));
-  document.getElementById(elId).innerHTML=sorted.map((p,i)=>`
-    <div class="stand-row ${final&&i===0?'top':''}">
+  const prevRank={};
+  if(prevScores) [...players].sort((a,b)=>(prevScores[b.uuid]||0)-(prevScores[a.uuid]||0)).forEach((p,i)=>prevRank[p.uuid]=i);
+  const me=getUser().uuid;
+  document.getElementById(elId).innerHTML=sorted.map((p,i)=>{
+    let extra='';
+    if(prevScores){
+      const d=(scores[p.uuid]||0)-(prevScores[p.uuid]||0), mv=(prevRank[p.uuid]??i)-i;
+      if(d) extra+=`<span class="delta ${d>0?'up':'down'}">${d>0?'+':''}${d}</span>`;
+      if(mv) extra+=`<span class="rank-move ${mv>0?'up':'down'}">${mv>0?'▲':'▼'}${Math.abs(mv)}</span>`;
+    }
+    return `
+    <div class="stand-row ${final&&i===0?'top':''} ${p.uuid===me?'me':''}">
       <div class="stand-rank">${i+1}</div>
       <span class="chip-avatar" style="width:30px;height:30px;background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</span>
       <div class="stand-name">${escHtml(p.name||'?')}${final&&i===0?' 👑':''}</div>
-      <div class="stand-score">${scores[p.uuid]||0}</div>
-    </div>`).join('');
+      ${extra}<div class="stand-score">${scores[p.uuid]||0}</div>
+    </div>`; }).join('');
 }
 
 // 統計を一度だけ記録
@@ -3702,6 +3737,7 @@ function showQIntro(id, n, total){
   const el=document.getElementById(id); if(!el) return;
   el.innerHTML=`<div class="q-intro-num">Q${n}</div><div class="q-intro-sub">${n===total&&total>1?'ラスト！':`全${total}問`}</div>`;
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  SFX.start();
 }
 // 再生を止めてタイマー類を解除
 function stopSolo(){
@@ -3862,7 +3898,10 @@ document.addEventListener('keydown', e=>{
   const t=e.target;
   if(t && t.matches && t.matches('[role="button"],[role="switch"]') && t.tagName!=='BUTTON'){ e.preventDefault(); t.click(); }
 });
-function openModal(id){ document.getElementById(id).classList.add('open'); }
+function openModal(id){
+  const m=document.getElementById(id); m.classList.add('open');
+  if(HAS_KEYBOARD){ const f=m.querySelector('input:not([type=hidden]):not([readonly]), select, textarea'); if(f) setTimeout(()=>f.focus(),50); }
+}
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 function openConfirm(title,text,onYes,yesLabel){
   document.getElementById('confirm-title').textContent=title;
