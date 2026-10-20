@@ -272,6 +272,10 @@
   .room-row:hover { border-color:var(--color-accent2); transform:translateX(2px); }
   .room-info { flex:1; min-width:0; }
   .room-name { font-weight:800; font-size:16px; }
+  .room-status { display:inline-block; vertical-align:2px; margin-left:6px; font-size:10px; font-weight:800; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+  .room-status.lobby { background:rgba(52,211,153,0.16); color:var(--color-correct); }
+  .room-status.playing { background:rgba(255,210,63,0.16); color:var(--color-accent); }
+  .room-status.finished { background:rgba(255,255,255,0.08); color:var(--color-muted); }
   .room-meta { font-size:12px; color:var(--color-muted); margin-top:3px; }
   .avatar-stack { display:flex; }
   .avatar-stack .chip-avatar { width:28px; height:28px; border:2px solid var(--color-surface); margin-left:-8px; font-size:11px; }
@@ -1532,7 +1536,7 @@ function joinFromHome(){
   document.getElementById('join-code').value=code;
   const found=findRoomByCode(code);
   joinByCode();
-  if(found && found.status==='lobby') document.getElementById('home-join-code').value='';
+  if(found) document.getElementById('home-join-code').value='';
 }
 function renderHomeLists(){
   const el=document.getElementById('home-lists'); if(!el) return;
@@ -2416,7 +2420,17 @@ function renderDetailSongs(){
 // ============================================================
 // 部屋（オンライン）
 // ============================================================
-function publicRooms(){ return STATE.rooms.filter(r => r.visibility==='public' && r.status==='lobby' && r.players && Object.keys(r.players).length); }
+const ROOM_ORDER={ lobby:0, playing:1, finished:2 };
+function publicRooms(){
+  return STATE.rooms.filter(r => r.visibility==='public' && ROOM_ORDER[r.status]!=null && r.players && Object.keys(r.players).length)
+    .sort((a,b)=>ROOM_ORDER[a.status]-ROOM_ORDER[b.status]);
+}
+// 部屋の状態のバッジ（一覧用）
+function roomStatusBadge(r){
+  if(r.status==='playing'){ const g=r.game||{}; return `<span class="room-status playing">🎵 対戦中 ${safeNum(g.current)+1}/${safeNum(g.total,'?')}問</span>`; }
+  if(r.status==='finished') return '<span class="room-status finished">🏁 結果発表中</span>';
+  return '<span class="room-status lobby">募集中</span>';
+}
 
 function renderRoomsList(){
   const el=document.getElementById('rooms-list'); const rooms=publicRooms();
@@ -2424,7 +2438,7 @@ function renderRoomsList(){
   el.innerHTML=rooms.map(r=>{
     const ps=r.players?Object.values(r.players):[];
     const stack=ps.slice(0,5).map(p=>`<span class="chip-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</span>`).join('');
-    return `<div class="room-row"><div class="avatar-stack">${stack}</div><div class="room-info"><div class="room-name">${escHtml(r.name)}</div><div class="room-meta">👑 ${escHtml(r.hostName||'?')} ・ ${ps.length}人が参加中</div></div><button class="btn-primary" style="padding:10px 22px; font-size:14px;" onclick="joinRoom('${safeId(r.id)}')">参加</button></div>`;
+    return `<div class="room-row"><div class="avatar-stack">${stack}</div><div class="room-info"><div class="room-name">${escHtml(r.name)} ${roomStatusBadge(r)}</div><div class="room-meta">👑 ${escHtml(r.hostName||'?')} ・ ${ps.length}人が参加中</div></div><button class="btn-primary" style="padding:10px 22px; font-size:14px;" onclick="joinRoom('${safeId(r.id)}')">${r.status==='lobby'?'参加':'途中参加'}</button></div>`;
   }).join('');
 }
 
@@ -2480,7 +2494,6 @@ function joinByCode(){
   if(!code){ showToast('合言葉/コードを入力してください','error'); return; }
   const room=findRoomByCode(code);
   if(!room){ showToast('該当する部屋が見つかりません','error'); return; }
-  if(room.status!=='lobby'){ showToast('この部屋は対戦中です','error'); return; }
   joinRoom(room.id);
 }
 function joinRoom(id){
@@ -2488,6 +2501,8 @@ function joinRoom(id){
   if(!room){ showToast('部屋が見つかりません','error'); return; }
   const u=getUser();
   if(!u.name){ pendingInviteRoomId=id; showToast('名前を設定すると部屋に参加します'); openProfileModal(); return; }
+  const already=!!(room.players&&room.players[u.uuid]);
+  if(room.status==='playing' && !already) setTimeout(()=>showToast('対戦の途中から参加しました。今の問題から答えられます','success'), 400);
   db.ref(`rooms/${id}/players/${u.uuid}`).set({ uuid:u.uuid, name:u.name, joinedAt:Date.now() })
     .then(()=>{ document.getElementById('join-code').value=''; enterLobby(id); });
 }
@@ -2515,7 +2530,6 @@ function handleStartupJoin(){
     const room=findRoomByCode(code);
     if(!room){ showToast('招待された部屋が見つかりません（解散済みの可能性）','error'); return; }
     if(!u.name){ pendingInviteRoomId=room.id; showToast('表示名を設定すると部屋に参加します'); openProfileModal(); return; }
-    if(room.status!=='lobby' && !(room.players&&room.players[u.uuid])){ showToast('この部屋は対戦中です。終了後に参加できます','error'); return; }
     joinRoom(room.id); return;
   }
   const savedId=lsGet(LS.room, null);
@@ -3259,6 +3273,17 @@ function gcEmptyRooms(){
     if(now-emptySince[r.id]>60000){ delete emptySince[r.id]; db.ref('rooms/'+r.id).remove().catch(()=>{}); }
   });
 }
+const matchSeenPlayers={};   // 部屋ごと：対戦中に見えていた参加者
+function noticeLateJoin(id, room){
+  const ids=Object.keys(room.players||{});
+  if(room.status==='lobby'){ delete matchSeenPlayers[id]; return; }
+  const seen=matchSeenPlayers[id];
+  if(seen){
+    const me=getUser().uuid;
+    ids.filter(u=>!seen.has(u) && u!==me).forEach(u=>showToast(`${(room.players[u]||{}).name||'?'} さんが途中参加しました`));
+  }
+  matchSeenPlayers[id]=new Set(ids);
+}
 function renderRoomState(id, room){
   if(!room){
     if(STATE.currentRoomId===id){ showToast('部屋が解散されました','error'); cleanupMatch(); STATE.currentRoomId=null; lsSet(LS.room, null); showPage('rooms'); updateReactions(null); }
@@ -3267,6 +3292,7 @@ function renderRoomState(id, room){
   noticeHostChange(id, room);
   maybeClaimHost(id, room);
   updateReactions(room);
+  noticeLateJoin(id, room);
   if(room.status==='lobby'){
     if(matchLocal.idx!==-1) cleanupMatch();
     showPage('room-lobby'); renderLobby(id, room);
