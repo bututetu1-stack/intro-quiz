@@ -1240,9 +1240,12 @@ async function importPlaylist(){
     if(entries.length===0){ showToast('動画を取得できませんでした（非公開リストの可能性）','error'); return; }
     const u=getUser(); list.songs=list.songs||[];
     const existing=new Set(list.songs.map(s=>s.videoId));
+    const seen=new Set();  // ミックスは同じ曲が繰り返し返るので、取り込み内の重複は件数に数えない
     let added=0, skipped=0, dup=0;
     for(const it of entries){
       const vid=it.vid, title=it.title;
+      if(vid && seen.has(vid)) continue;
+      if(vid) seen.add(vid);
       if(!vid || !title || title==='Deleted video' || title==='Private video' || !it.embeddable){ skipped++; continue; }
       if(existing.has(vid)){ dup++; continue; }
       existing.add(vid);
@@ -1444,7 +1447,8 @@ function enterLobby(id){
   // この部屋を購読
   if(lobbyRef) lobbyRef.off();
   lobbyRef=db.ref('rooms/'+id);
-  lobbyRef.on('value', snap=>{ renderRoomState(id, snap.val()); });
+  // snap.val() には id が入らないので付与する（STATE.rooms 経由の描画と演出キー fxKeyOf を一致させる）
+  lobbyRef.on('value', snap=>{ const v=snap.val(); if(v) v.id=id; renderRoomState(id, v); });
 }
 
 function renderLobby(id, room){
@@ -1913,23 +1917,32 @@ function playMatchChorus(videoId, startSecs){
 // ===== サビ開始秒の決定（手動 → ゲーム内自動値 → キャッシュ → API取得 → フォールバック） =====
 // vide_quiz と同じく lemnoslife の Most Replayed API を使用（JSONで返るためCORSプロキシより確実）
 const MOST_REPLAYED_API='https://yt.lemnoslife.com/videos?part=mostReplayed&id=';
+const MOST_REPLAYED_TIMEOUT_MS=3000;  // 非公式APIが落ちていると応答まで20秒以上かかるため打ち切る
 async function ensureChorusAndPlay(id, room, idx){
-  if(matchLocal.chorusPlayed) return;
+  if(matchLocal.chorusPlayed || matchLocal.chorusLoading) return;
+  const local=matchLocal;  // 取得を待つ間に次の問題へ進んだかの判定用（問題が変わると matchLocal は作り直される）
   const g=room.game; const q=g.questions[idx];
   try{ matchPlayer && matchPlayer.pauseVideo(); }catch(e){} // 本編は確実に止める
   let start=null;
   if(q.chorusStart!=null && q.chorusStart>=0) start=Number(q.chorusStart);          // 手動
   else if(q.chorusAuto!=null && q.chorusAuto>=0) start=Number(q.chorusAuto);         // 既出の自動値
   else {
+    local.chorusLoading=true;
     start=await getCachedChorus(q.videoId);
     const isHost=room.hostUuid===getUser().uuid;
     if(start==null && isHost){
       start=await fetchChorusStart(q.videoId);                 // プロキシ取得（ホストのみ）
-      if(start==null){ const d=matchDuration(); start=(d>20)?Math.max(30, Math.min(d/3, d-15)):0; } // フォールバック：1/3地点
+      // フォールバック：1/3地点（次の問題へ進んでいたらプレーヤーは別の曲なので、その長さでは計算しない）
+      if(start==null && matchLocal===local){ const d=matchDuration(); start=(d>20)?Math.max(30, Math.min(d/3, d-15)):0; }
       if(start!=null){ setCachedChorus(q.videoId, start); db.ref(`rooms/${id}/game/questions/${idx}/chorusAuto`).set(start); }
     }
+    local.chorusLoading=false;
+    // 待っている間にホストの自動値が届いていればそれを使う
+    if(start==null){ const r=STATE.rooms.find(x=>x.id===id); const q2=r&&r.game&&r.game.questions&&r.game.questions[idx]; if(q2&&q2.chorusAuto!=null&&q2.chorusAuto>=0) start=Number(q2.chorusAuto); }
   }
-  if(start!=null && start>=0){ matchLocal.chorusPlayed=true; playMatchChorus(q.videoId, start); }
+  // 取得を待つ間に次の問題へ進んでいたら、前の曲のサビで再生を上書きしない
+  if(matchLocal!==local) return;
+  if(start!=null && start>=0){ local.chorusPlayed=true; playMatchChorus(q.videoId, start); }
   // 非ホストで自動値未取得なら待つ（ホストの値が届いたら次のrenderRevealで再生）
 }
 function getCachedChorus(videoId){
@@ -1938,8 +1951,10 @@ function getCachedChorus(videoId){
 function setCachedChorus(videoId, sec){ try{ db.ref('chorusCache/'+videoId).set(sec); }catch(e){} }
 // Most Replayed API で最も再生が多い位置（秒）を取得。失敗時は null
 async function fetchChorusStart(videoId){
+  const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
+  const abortTimer=ctrl?setTimeout(()=>ctrl.abort(), MOST_REPLAYED_TIMEOUT_MS):null;
   try{
-    const res=await fetch(MOST_REPLAYED_API+encodeURIComponent(videoId));
+    const res=await fetch(MOST_REPLAYED_API+encodeURIComponent(videoId), ctrl?{ signal:ctrl.signal }:undefined);
     if(!res.ok) return null;
     const data=await res.json();
     const mr=data&&data.items&&data.items[0]&&data.items[0].mostReplayed;
@@ -1954,6 +1969,7 @@ async function fetchChorusStart(videoId){
     }
     return best;
   }catch(e){ return null; }
+  finally{ if(abortTimer) clearTimeout(abortTimer); }
 }
 
 // ============================================================
@@ -2114,6 +2130,7 @@ function resetPlayView(){
 
 // 早押し：トランザクションで回答権を直接取得（サーバーに先に届いた人が勝ち）。
 // ホストの調停を待たないので、押してから回答欄が出るまでの遅延がほぼ通信1往復になる。
+// 結果は手元で先に反映しない（applyLocally=false）。同時押しで負けた側に一瞬「あなたに回答権！」が出るのを防ぐ
 function buzz(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
   const g=room.game; if(!g||g.phase!=='play') return;
@@ -2128,6 +2145,7 @@ function buzz(){
   vibrate(40);
   try{ matchPlayer.pauseVideo(); }catch(e){}
   document.getElementById('match-buzz-btn').style.display='none';
+  const waitEl=document.getElementById('match-wait'); waitEl.style.display=''; waitEl.textContent='🔔 早押し！ 判定中...';
   const elapsed=matchLocal.elapsed;
   db.ref(`rooms/${room.id}/game/rounds/${idx}`).transaction(cur=>{
     cur=cur||{};
@@ -2141,7 +2159,7 @@ function buzz(){
     if(err) showToast('通信エラーで早押しできませんでした','error');
     const r=STATE.rooms.find(x=>x.id===STATE.currentRoomId);
     if(r) renderMatch(r.id, r);   // 取得できなかった場合は「○○さんが回答中」かボタン復帰に切り替え
-  });
+  }, false);
 }
 
 function submitMatchAnswer(){
@@ -2679,7 +2697,8 @@ function ensureSoloPlayer(cb){
     }
   });
 }
-function normalize(s){ return s.toLowerCase().replace(/[ぁ-ん]/g,c=>String.fromCharCode(c.charCodeAt(0)+96)).replace(/[^\p{L}\p{N}]/gu,''); }
+// NFKC で全角英数字→半角、半角カナ→全角カナに揃えてから比較する
+function normalize(s){ return s.normalize('NFKC').toLowerCase().replace(/[ぁ-ゖ]/g,c=>String.fromCharCode(c.charCodeAt(0)+96)).replace(/[^\p{L}\p{N}]/gu,''); }
 function submitAnswer(){
   if(quiz.answered) return;
   const input=document.getElementById('answer-input'); const ua=input.value.trim();
