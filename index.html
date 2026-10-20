@@ -9,7 +9,7 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23ffd23f'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%231a1300'%3E%E2%99%AA%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap" rel="stylesheet">
 
 <!-- Firebase (compat) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -339,6 +339,8 @@
   .buzz-btn:active { transform:translateY(8px); box-shadow:0 2px 0 #8f1230, 0 8px 20px rgba(255,79,109,0.35), inset 0 -4px 0 rgba(0,0,0,0.15); }
   .buzz-btn:disabled { filter:grayscale(.85) brightness(.75); cursor:not-allowed; transform:none; font-size:17px; }
   .buzz-key { font-size:11px; font-weight:700; opacity:.85; letter-spacing:2px; }
+  .giveup-btn { display:block; margin:-6px auto 16px; background:none; border:none; color:var(--color-muted); font-size:13px; font-weight:800; cursor:pointer; text-decoration:underline; text-underline-offset:3px; padding:6px 10px; }
+  .giveup-btn:hover { color:var(--color-text); }
   .pause-btn { background:rgba(255,255,255,0.06); border:1px solid var(--color-border-strong); color:var(--color-text); padding:7px 14px; border-radius:999px; cursor:pointer; font-size:13px; font-weight:800; white-space:nowrap; flex-shrink:0; transition:var(--transition); }
   .pause-btn:hover { border-color:var(--color-accent); color:var(--color-accent); }
   .quiz-topbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
@@ -995,6 +997,7 @@
     </div>
     <button class="btn-primary" id="solo-start-btn" style="width:100%; margin-bottom:14px;" onclick="soloStart()">▶ 再生してスタート</button>
     <button class="buzz-btn" id="solo-buzz-btn" style="display:none;" onpointerdown="soloBuzz()" onclick="soloBuzz()"><span>🔔</span><span>わかった！</span></button>
+    <button class="giveup-btn" id="solo-giveup-btn" style="display:none;" onclick="soloGiveUp()">わからない（答えを見る）</button>
     <div class="answer-area" id="solo-answer-area" style="display:none;">
       <div class="answer-label" id="solo-buzz-time" style="color:var(--color-accent);">曲名を入力（よみがな・別表記もOK）</div>
       <div class="answer-input-wrap">
@@ -1380,6 +1383,9 @@ function setSuggestItems(inputId, boxId, choices, yomi){
 function bindSuggest(inputId){
   const input=document.getElementById(inputId); if(!input || input.dataset.suggestBound) return;
   input.dataset.suggestBound='1';
+  const st0=suggestState[inputId];
+  input.setAttribute('role','combobox'); input.setAttribute('aria-autocomplete','list'); input.setAttribute('aria-expanded','false'); input.setAttribute('aria-controls', st0.boxId);
+  const box0=document.getElementById(st0.boxId); if(box0) box0.setAttribute('role','listbox');
   input.addEventListener('input', ()=>updateSuggest(inputId));
   input.addEventListener('blur', ()=>setTimeout(()=>hideSuggest(inputId),120));
   input.addEventListener('keydown', e=>{
@@ -1401,12 +1407,13 @@ function updateSuggest(inputId){
   st.shown=[...starts, ...contains].slice(0,8); st.active=-1;
   if(!st.shown.length || (st.shown.length===1 && normalize(st.shown[0].label)===q)){ hideSuggest(inputId); return; }
   const box=document.getElementById(st.boxId);
-  box.innerHTML=st.shown.map((it,i)=>`<div class="suggest-item" onpointerdown="event.preventDefault(); pickSuggest('${inputId}',${i})"><span>${escHtml(it.label)}</span>${it.yomi&&normalize(it.yomi)!==normalize(it.label)?`<small>${escHtml(it.yomi)}</small>`:''}</div>`).join('');
-  box.classList.add('open');
+  box.innerHTML=st.shown.map((it,i)=>`<div class="suggest-item" role="option" id="${st.boxId}-o${i}" onpointerdown="event.preventDefault(); pickSuggest('${inputId}',${i})"><span>${escHtml(it.label)}</span>${it.yomi&&normalize(it.yomi)!==normalize(it.label)?`<small>${escHtml(it.yomi)}</small>`:''}</div>`).join('');
+  box.classList.add('open'); input.setAttribute('aria-expanded','true');
 }
 function markSuggestActive(inputId){
   const st=suggestState[inputId]; const box=document.getElementById(st.boxId);
-  box.querySelectorAll('.suggest-item').forEach((el,i)=>{ el.classList.toggle('active', i===st.active); if(i===st.active) el.scrollIntoView({ block:'nearest' }); });
+  box.querySelectorAll('.suggest-item').forEach((el,i)=>{ el.classList.toggle('active', i===st.active); el.setAttribute('aria-selected', i===st.active); if(i===st.active) el.scrollIntoView({ block:'nearest' }); });
+  const inp=document.getElementById(inputId); if(inp){ if(st.active>=0) inp.setAttribute('aria-activedescendant', st.boxId+'-o'+st.active); else inp.removeAttribute('aria-activedescendant'); }
 }
 function pickSuggest(inputId, i){
   const st=suggestState[inputId]; const it=st&&st.shown[i]; if(!it) return;
@@ -1416,6 +1423,7 @@ function hideSuggest(inputId){
   const st=suggestState[inputId]; if(!st) return;
   st.shown=[]; st.active=-1;
   const box=document.getElementById(st.boxId); if(box){ box.classList.remove('open'); box.innerHTML=''; }
+  const inp=document.getElementById(inputId); if(inp){ inp.setAttribute('aria-expanded','false'); inp.removeAttribute('aria-activedescendant'); }
 }
 // Enter：候補を矢印キーで選んでいればそれを入力するだけ（送信しない）
 function suggestHandledEnter(e){
@@ -1631,6 +1639,10 @@ function needsYomi(s){ return KANJI_RE.test((s.answers||[])[0]||'') && !(s.yomig
 async function fillYomiganaLater(listId, songIds){
   const ids=new Set(songIds);
   const first=getList(listId); if(!first || !(first.songs||[]).some(s=>ids.has(s.id) && needsYomi(s))) return;
+  const conn=navigator.connection;
+  if(!yomiTokenizer && conn && (conn.saveData || /(^|-)(2g|3g)$/.test(conn.effectiveType||''))){
+    showToast('通信量を抑えるため、よみがなは自動で付けませんでした。「曲名・よみを自動入力」から付けられます'); return;
+  }
   try{
     if(!yomiTokenizer) showToast('よみがなを付けています…（初回は辞書の読み込みに少し時間がかかります）');
     await loadYomiTokenizer();
@@ -3406,7 +3418,8 @@ function selectSetupList(id){
   document.getElementById('setup-start-btn').disabled=false;
   // 画面下に「▶ スタート」を出す（一覧が長くても下までスクロールしなくてよいように）
   const playable=(list.songs||[]).filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）').length;
-  document.getElementById('setup-cta-text').innerHTML=`${escHtml(list.name)}<small>${playable}曲から出題</small>`;
+  const best=soloBestOf(list.id);
+  document.getElementById('setup-cta-text').innerHTML=`${escHtml(list.name)}<small>${playable}曲から出題${best?` ・ 🏅自己ベスト ${Math.round(best.rate*100)}%`:''}</small>`;
   document.getElementById('setup-cta').hidden=false;
   document.querySelector('#page-setup .container').classList.add('has-sticky-cta');
 }
@@ -3459,6 +3472,7 @@ function loadQuestion(){
   document.getElementById('timer-bar').style.background='var(--color-accent)';
   const sb=document.getElementById('solo-start-btn'); sb.style.display=''; sb.disabled=false; sb.textContent='▶ 再生してスタート';
   document.getElementById('solo-buzz-btn').style.display='none';
+  document.getElementById('solo-giveup-btn').style.display='none';
   document.getElementById('solo-answer-area').style.display='none';
   setSoloPauseBtn(null);
   setSoloCover(false,'▶ を押して再生'+kbHint('（Space でもOK）'));
@@ -3490,6 +3504,7 @@ function onSoloSongStart(){
   if(soloWatchdog) clearTimeout(soloWatchdog);
   document.getElementById('solo-start-btn').style.display='none';
   document.getElementById('solo-buzz-btn').style.display='';
+  document.getElementById('solo-giveup-btn').style.display='';
   setSoloPauseBtn(true);
   setSoloCover(true,'♪ 再生中');
   if(quiz.timer) clearInterval(quiz.timer);
@@ -3571,13 +3586,26 @@ function ensureSoloPlayer(cb){
 }
 // NFKC で全角英数字→半角、半角カナ→全角カナに揃えてから比較する
 function normalize(s){ return s.normalize('NFKC').toLowerCase().replace(/[ぁ-ゖ]/g,c=>String.fromCharCode(c.charCodeAt(0)+96)).replace(/[^\p{L}\p{N}]/gu,''); }
-function submitAnswer(){
+// 「わからない」：答えを見て不正解扱いにする
+function soloGiveUp(){
+  if(quiz.answered || !soloPendingVideo) return;
+  quiz.buzzed=true; quiz.lastTime=null;
+  if(quiz.timer) clearInterval(quiz.timer);
+  clearTimeout(quiz.autoTimer);
+  document.getElementById('solo-buzz-btn').style.display='none';
+  document.getElementById('solo-start-btn').style.display='none';
+  document.getElementById('solo-answer-area').style.display='';
+  document.getElementById('answer-input').value='（わからない）';
+  submitAnswer(true);
+}
+function submitAnswer(giveUp){
   if(quiz.answered) return;
   const input=document.getElementById('answer-input'); const ua=input.value.trim();
   if(!ua){ showToast('答えを入力してください','error'); return; }
   const s=quiz.songs[quiz.current];
   const candidates=[...(s.answers||[]),...(s.yomigana||[])].map(normalize);
-  const isCorrect=candidates.includes(normalize(ua));
+  const isCorrect=giveUp!==true && candidates.includes(normalize(ua));
+  document.getElementById('solo-giveup-btn').style.display='none';
   quiz.answered=true; if(quiz.timer) clearInterval(quiz.timer);
   if(soloStopTimer) clearTimeout(soloStopTimer);
   try{ soloPlayer && soloPlayer.pauseVideo(); }catch(e){}
@@ -3627,6 +3655,16 @@ function quitSolo(){
     if(done) showResult(true); else showPage('setup');
   }, 'やめる');
 }
+// 自己ベスト（リストごと・端末ごと）。正解率が高い方、同じなら平均タイムが速い方
+function soloBestKey(listId){ return 'iq_best_'+listId; }
+function soloBestOf(listId){ return lsGet(soloBestKey(listId), null); }
+function recordSoloBest(avg){
+  const total=quiz.songs.length; if(!quiz.listId || total<3) return null;
+  const rate=quiz.score/total, prev=soloBestOf(quiz.listId);
+  const better=!prev || rate>prev.rate || (rate===prev.rate && avg!=null && (prev.avg==null || avg<prev.avg));
+  if(better) lsSet(soloBestKey(quiz.listId), { rate, score:quiz.score, total, avg, at:Date.now() });
+  return { prev, better };
+}
 function showResult(partial){
   stopSolo();
   const total=partial?quiz.results.length:quiz.songs.length;
@@ -3644,6 +3682,10 @@ function showResult(partial){
     fastest?`<div class="stat-card"><div class="stat-number">${fastest.time.toFixed(2)}<small>秒</small></div><div class="stat-label">最速：${escHtml((fastest.answer||'').split(' / ')[0])}</div></div>`:'',
     quiz.bestStreak>=2?`<div class="stat-card"><div class="stat-number">${quiz.bestStreak}</div><div class="stat-label">最大連続正解</div></div>`:''
   ].join('');
+  if(!partial){
+    const best=recordSoloBest(avg);
+    if(best && best.better && best.prev) document.getElementById('result-msg').textContent='🎊 自己ベスト更新！ '+msg;
+  }
   document.getElementById('result-list').innerHTML=quiz.results.map(r=>`<div class="result-item"><span style="font-size:18px;">${r.correct?'✅':'❌'}</span>${r.videoId?`<img class="result-thumb" src="https://img.youtube.com/vi/${r.videoId}/mqdefault.jpg" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:''}<div style="flex:1; min-width:0;"><div style="font-weight:800;">${escHtml(r.answer||r.title)}</div><div style="color:var(--color-muted); font-size:12px; margin-top:2px;">あなたの答え：${escHtml(r.userInput)}</div></div>${r.correct&&r.time!=null?`<span class="sub-time">${r.time.toFixed(2)}秒</span>`:''}</div>`).join('');
   showPage('result');
   // 円グラフを0から伸ばす
