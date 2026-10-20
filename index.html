@@ -43,11 +43,16 @@
       radial-gradient(35% 35% at 100% 75%, rgba(255,79,139,0.12), transparent 70%),
       linear-gradient(180deg,#130f2e 0%, var(--color-bg) 55%);
     background-color:var(--color-bg); background-attachment:fixed; padding-bottom:var(--tabbar-h); }
-  .page { display:none; } .page.active { display:block; animation:pageIn .25s ease; }
-  @keyframes pageIn { from{ transform:translateY(8px); } to{ transform:none; } }   /* 不透明度は変えない（アニメーションが止まる環境で薄く表示されないように） */
+  /* ページ自体には transform のアニメーションを付けない（中の position:fixed の基準がページになり、
+     スマホの早押しボタンや画面下の開始ボタンがずれるため） */
+  .page { display:none; } .page.active { display:block; }
   a { color:var(--color-accent2); }
   button { font-family:var(--font-body); }
   ::selection { background:rgba(255,210,63,0.35); }
+  /* キーボード操作時のフォーカス表示 */
+  :focus-visible { outline:3px solid var(--color-accent2); outline-offset:3px; }
+  .form-input:focus-visible, .form-select:focus-visible, .form-textarea:focus-visible, .answer-input:focus-visible { outline:none; }
+  .list-card:focus-visible, .mode-card:focus-visible { outline-offset:4px; }
 
   /* ===== ナビ ===== */
   .nav { display:flex; align-items:center; justify-content:space-between; padding:12px 24px; position:sticky; top:0; z-index:100; gap:12px;
@@ -102,7 +107,24 @@
   .multi-row .form-input { flex:1; }
   .multi-del,.multi-add { border:1px solid var(--color-border-strong); background:rgba(255,255,255,0.04); color:var(--color-muted); border-radius:999px; cursor:pointer; font-size:14px; transition:var(--transition); flex-shrink:0; }
   .multi-del { width:42px; border-radius:var(--radius-sm); } .multi-del:hover { border-color:var(--color-wrong); color:var(--color-wrong); }
-  .multi-add { padding:6px 14px; font-size:12px; font-weight:700; margin:2px 4px 0 0; } .multi-add:hover { border-color:var(--color-accent); color:var(--color-accent); }
+  .multi-add { padding:6px 14px; font-size:12px; font-weight:700; margin:2px 4px 0 0; align-self:flex-start; } .multi-add:hover { border-color:var(--color-accent); color:var(--color-accent); }
+  .btn-row { display:flex; flex-wrap:wrap; gap:6px; }
+  .head-actions { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  /* タブ切替（曲の追加方法） */
+  .seg-tabs { display:flex; gap:4px; background:rgba(0,0,0,0.25); border:1px solid var(--color-border); border-radius:999px; padding:4px; margin-bottom:18px; overflow-x:auto; }
+  .seg-tab { flex:1; background:none; border:none; color:var(--color-muted); padding:9px 12px; border-radius:999px; cursor:pointer; font-size:13px; font-weight:800; white-space:nowrap; transition:var(--transition); }
+  .seg-tab:hover { color:var(--color-text); }
+  .seg-tab.active { background:var(--color-accent); color:#1a1300; }
+  .seg-panel[hidden] { display:none; }
+  /* 画面下に固定する開始ボタン（ソロ設定・ロビーのホスト） */
+  .sticky-cta { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(16px + var(--tabbar-h)); z-index:120; width:min(560px, calc(100% - 24px));
+    display:flex; align-items:center; gap:12px; padding:10px 10px 10px 18px; border-radius:999px; background:rgba(34,30,68,0.92); border:1px solid var(--color-border-strong);
+    backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); box-shadow:0 12px 32px rgba(0,0,0,0.45); }
+  .sticky-cta[hidden] { display:none; }
+  .sticky-cta-text { flex:1; min-width:0; font-weight:800; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .sticky-cta-text small { display:block; font-size:11px; color:var(--color-muted); font-weight:700; }
+  .sticky-cta .btn-primary { padding:12px 24px; font-size:15px; white-space:nowrap; }
+  .has-sticky-cta { padding-bottom:96px; }
 
   .card { background:linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.01)), var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg); padding:22px; margin-bottom:20px; box-shadow:0 8px 24px rgba(0,0,0,0.18); }
   .card-title { font-weight:800; font-size:15px; color:var(--color-text); margin-bottom:16px; display:flex; align-items:center; gap:8px; }
@@ -150,7 +172,7 @@
   .mode-card.solo { background:linear-gradient(145deg,#3ec5ff 0%,#6d5cff 100%); --mode-deep:#3a2fa8; }
   .mode-icon { font-size:46px; line-height:1; margin-bottom:10px; position:relative; z-index:1; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.25)); }
   .mode-name { font-family:var(--font-display); font-size:28px; font-weight:700; line-height:1.15; margin-bottom:6px; position:relative; z-index:1; text-shadow:0 2px 0 rgba(0,0,0,0.15); }
-  .mode-desc { font-size:13px; line-height:1.6; opacity:.92; position:relative; z-index:1; flex:1; }
+  .mode-desc { font-size:13px; font-weight:700; line-height:1.6; position:relative; z-index:1; flex:1; text-shadow:0 1px 3px rgba(0,0,0,0.35); }
   .mode-cta { margin-top:14px; align-self:flex-start; background:#fff; color:#1b1530; font-weight:800; font-size:14px; padding:10px 18px; border-radius:999px; position:relative; z-index:1; box-shadow:0 3px 0 rgba(0,0,0,0.2); }
   .quick-join { display:flex; align-items:center; gap:14px; margin-top:18px; padding:16px 18px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg); flex-wrap:wrap; }
   .quick-join-label { font-weight:800; font-size:14px; white-space:nowrap; }
@@ -605,13 +627,13 @@
         </div>
       </div>
       <div class="home-modes">
-        <div class="mode-card mp" onclick="showPage('rooms')">
+        <div class="mode-card mp" role="button" tabindex="0" onclick="showPage('rooms')">
           <div class="mode-icon">🎤</div>
           <div class="mode-name">みんなで対戦</div>
           <div class="mode-desc">部屋を建てて友達と早押しバトル。招待リンクを送るだけで参加できます。</div>
           <div class="mode-cta">部屋を探す・建てる →</div>
         </div>
-        <div class="mode-card solo" onclick="showPage('setup')">
+        <div class="mode-card solo" role="button" tabindex="0" onclick="showPage('setup')">
           <div class="mode-icon">🎧</div>
           <div class="mode-name">ひとりで練習</div>
           <div class="mode-desc">好きな曲リストでイントロ当てに挑戦。自分のペースで遊べます。</div>
@@ -695,7 +717,7 @@
       <div class="card-title">⚙️ 対戦設定（ホストのみ）</div>
       <div class="form-group">
         <label class="form-label">闇鍋モード（全プレイリストからランダム出題）</label>
-        <div class="toggle-switch" onclick="toggleYaminabe()">
+        <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleYaminabe()">
           <div class="toggle-track" id="yaminabe-track"><div class="toggle-knob"></div></div>
           <span style="font-size:13px;" id="yaminabe-label">OFF</span>
         </div>
@@ -732,7 +754,7 @@
         </div>
         <div class="form-group">
           <label class="form-label">回答候補を表示</label>
-          <div class="toggle-switch" onclick="toggleSuggest()">
+          <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleSuggest()">
             <div class="toggle-track" id="suggest-track"><div class="toggle-knob"></div></div>
             <span style="font-size:13px;" id="suggest-label">OFF</span>
           </div>
@@ -744,7 +766,7 @@
       <summary>詳細設定（ハンデ戦・サビ再生・得点）</summary>
       <div class="form-group">
         <label class="form-label">ハンデ戦</label>
-        <div class="toggle-switch" onclick="toggleHandicap()">
+        <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleHandicap()">
           <div class="toggle-track" id="handicap-track"><div class="toggle-knob"></div></div>
           <span style="font-size:13px;" id="handicap-label">OFF</span>
         </div>
@@ -765,7 +787,7 @@
 
       <div class="form-group">
         <label class="form-label">サビ再生（時間切れ・正解後に自動でサビを再生）</label>
-        <div class="toggle-switch" onclick="toggleChorus()">
+        <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleChorus()">
           <div class="toggle-track" id="chorus-track"><div class="toggle-knob"></div></div>
           <span style="font-size:13px;" id="chorus-label">OFF</span>
         </div>
@@ -795,6 +817,10 @@
 
     <div class="actions-right">
       <button class="btn-sub" id="lobby-leave-btn" onclick="leaveRoom()" style="border-color:var(--color-wrong); color:var(--color-wrong);">部屋を退出 / 解散</button>
+    </div>
+    <div class="sticky-cta" id="lobby-cta" hidden>
+      <div class="sticky-cta-text" id="lobby-cta-text"></div>
+      <button class="btn-primary" onclick="hostStartMatch()">▶ 対戦を開始</button>
     </div>
   </div>
 </div>
@@ -903,7 +929,7 @@
       <div class="card-title">オプション</div>
       <div class="form-group" style="margin-bottom:0;">
         <label class="form-label">回答候補</label>
-        <div class="toggle-switch" onclick="toggleSoloSuggest()">
+        <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleSoloSuggest()">
           <div class="toggle-track" id="solo-suggest-track"><div class="toggle-knob"></div></div>
           <span style="font-size:13px;" id="solo-suggest-label">ON</span>
         </div>
@@ -911,6 +937,10 @@
       </div>
     </div>
     <div class="actions-right"><button class="btn-primary start-btn" id="setup-start-btn" onclick="startSoloQuiz()" disabled>▶ スタート</button></div>
+    <div class="sticky-cta" id="setup-cta" hidden>
+      <div class="sticky-cta-text" id="setup-cta-text"></div>
+      <button class="btn-primary" onclick="startSoloQuiz()">▶ スタート</button>
+    </div>
   </div>
 </div>
 
@@ -1003,71 +1033,88 @@
 <!-- リスト詳細 -->
 <div id="page-list-detail" class="page">
   <div class="container">
-    <span class="back-link" onclick="showPage('lists')">← リスト一覧に戻る</span>
-    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-      <div><div class="section-title" id="detail-list-name">リスト名</div><div class="section-desc" id="detail-list-meta"></div></div>
-      <button class="btn-sub" id="detail-delete-list" onclick="confirmDeleteList()">リストを削除</button>
+    <span class="back-link" onclick="showPage('lists')">← 曲リスト一覧</span>
+    <div class="page-head">
+      <div style="min-width:0;">
+        <div class="eyebrow">SONG LIST</div>
+        <div class="section-title" id="detail-list-name">リスト名</div>
+        <div class="section-desc" id="detail-list-meta"></div>
+      </div>
+      <div class="head-actions">
+        <button class="btn-primary" id="detail-play" onclick="quickPlaySolo(currentListId)">▶ このリストで遊ぶ</button>
+        <button class="btn-sub" id="detail-delete-list" onclick="confirmDeleteList()" style="padding:10px 16px; font-size:13px;">削除</button>
+      </div>
     </div>
-    <div class="card" id="add-song-card">
-      <div class="card-title">+ 曲を追加</div>
-      <div class="form-group"><label class="form-label">YouTube URL</label><input class="form-input" id="f-url" type="text" placeholder="https://www.youtube.com/watch?v=XXXXXXXXXX"></div>
-      <div class="form-group">
-        <label class="form-label">正解（複数の表記を登録できます）</label>
-        <div id="answers-list"></div>
-        <button class="multi-add" type="button" onclick="addMultiRow('answers-list','例: 別表記・英語名など')">+ 表記を追加</button>
-        <div class="form-hint">例：「Pretender」「プリテンダー」など、漢字・ひらがな・英字の揺れを登録</div>
+
+    <!-- 曲の追加（作成者のみ）：3つの方法をタブで切り替え -->
+    <div class="card" id="add-song-panel">
+      <div class="card-title">＋ 曲を追加</div>
+      <div class="seg-tabs" role="tablist">
+        <button class="seg-tab active" role="tab" data-tab="playlist" onclick="setAddTab('playlist')">📋 プレイリスト</button>
+        <button class="seg-tab" role="tab" data-tab="bulk" onclick="setAddTab('bulk')">⚡ URLをまとめて</button>
+        <button class="seg-tab" role="tab" data-tab="single" onclick="setAddTab('single')">✏️ 1曲ずつ</button>
       </div>
-      <div class="form-group">
-        <label class="form-label">よみがな（任意・複数可）</label>
-        <div id="yomi-list"></div>
-        <button class="multi-add" type="button" onclick="addMultiRow('yomi-list','よみがな（ひらがな）')">+ よみがなを追加</button>
-        <button class="multi-add" type="button" onclick="autoYomiForAdd()">🪄 正解からよみを自動入力</button>
-      </div>
-      <div class="row2">
-        <div class="form-group"><label class="form-label">表示タイトル（任意）</label><input class="form-input" id="f-title" type="text" placeholder="空欄なら最初の正解を使用"></div>
-        <div class="form-group"><label class="form-label">ジャンル</label>
-          <select class="form-select" id="f-genre">
+      <div class="seg-panel" id="playlist-card" data-panel="playlist">
+        <div class="form-group">
+          <label class="form-label">プレイリストのURL</label>
+          <input class="form-input" id="pl-url" type="text" placeholder="https://www.youtube.com/playlist?list=PLxxxxxxxx" onkeydown="if(event.key==='Enter') importPlaylist()">
+          <div class="form-hint">YouTube・YouTube Music のプレイリストや、自動生成ミックス（list=RD...、先頭の数十曲まで）を取り込めます。曲名とよみがなは動画タイトルから自動で入ります（例：「ヒグチアイ / 悪魔の子 (アニメスペシャルVer.) | …」→「悪魔の子」）。登録済みの曲はスキップします。</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ジャンル（取り込む全曲に適用）</label>
+          <select class="form-select" id="pl-genre">
             <option value="">未分類</option><option value="J-POP">J-POP</option><option value="アニメ">アニメ</option>
             <option value="ゲーム">ゲーム</option><option value="洋楽">洋楽</option><option value="K-POP">K-POP</option>
             <option value="ボカロ">ボカロ</option><option value="その他">その他</option>
           </select>
         </div>
+        <div class="actions-right"><button class="btn-primary" id="pl-btn" onclick="importPlaylist()" style="padding:12px 28px; font-size:15px;">取り込む</button></div>
       </div>
-      <div class="form-group">
-        <label class="form-label">サビ開始時間（秒・任意）</label>
-        <input class="form-input" id="f-chorus" type="number" placeholder="例: 62（動画の何秒目からサビを再生するか）" min="0" step="1">
-        <div class="form-hint">時間切れや正解後にサビを再生する位置（秒）。空欄なら再生なし。</div>
+      <div class="seg-panel" id="bulk-card" data-panel="bulk" hidden>
+        <div class="form-group">
+          <label class="form-label">YouTube の URL（1行に1つ）</label>
+          <textarea class="form-textarea" id="bulk-urls" rows="5" placeholder="https://www.youtube.com/watch?v=AAA&#10;https://youtu.be/BBB"></textarea>
+          <div class="form-hint">動画タイトルから曲名とよみがなを自動で入れて追加します。このリストに登録済みの曲はスキップします。</div>
+        </div>
+        <div class="actions-right"><button class="btn-primary" onclick="bulkAddSongs()" style="padding:12px 28px; font-size:15px;">まとめて追加</button></div>
       </div>
-      <div class="actions-right"><button class="btn-sub" onclick="addSong()" style="border-color:var(--color-accent); color:var(--color-accent);">この曲を追加</button></div>
+      <div class="seg-panel" id="add-song-card" data-panel="single" hidden>
+        <div class="form-group"><label class="form-label">YouTube の URL</label><input class="form-input" id="f-url" type="text" placeholder="https://www.youtube.com/watch?v=XXXXXXXXXX"></div>
+        <div class="form-group">
+          <label class="form-label">正解（複数の表記を登録できます）</label>
+          <div id="answers-list"></div>
+          <div class="btn-row"><button class="multi-add" type="button" onclick="addMultiRow('answers-list','例: 別表記・英語名など')">＋ 表記を追加</button></div>
+          <div class="form-hint">例：「Pretender」「プリテンダー」など、漢字・ひらがな・英字の揺れを登録</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">よみがな（任意・複数可）</label>
+          <div id="yomi-list"></div>
+          <div class="btn-row">
+            <button class="multi-add" type="button" onclick="addMultiRow('yomi-list','よみがな（ひらがな）')">＋ よみがなを追加</button>
+            <button class="multi-add" type="button" onclick="autoYomiForAdd()">🪄 正解からよみを自動入力</button>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="form-group"><label class="form-label">表示タイトル（任意）</label><input class="form-input" id="f-title" type="text" placeholder="空欄なら最初の正解を使用"></div>
+          <div class="form-group"><label class="form-label">ジャンル</label>
+            <select class="form-select" id="f-genre">
+              <option value="">未分類</option><option value="J-POP">J-POP</option><option value="アニメ">アニメ</option>
+              <option value="ゲーム">ゲーム</option><option value="洋楽">洋楽</option><option value="K-POP">K-POP</option>
+              <option value="ボカロ">ボカロ</option><option value="その他">その他</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">サビ開始時間（秒・任意）</label>
+          <input class="form-input" id="f-chorus" type="number" placeholder="例: 62（動画の何秒目からサビを再生するか）" min="0" step="1">
+          <div class="form-hint">対戦で正解後・時間切れ後にサビを再生する位置。空欄なら自動で探します。</div>
+        </div>
+        <div class="actions-right"><button class="btn-primary" onclick="addSong()" style="padding:12px 28px; font-size:15px;">この曲を追加</button></div>
+      </div>
     </div>
-    <div class="card" id="bulk-card">
-      <div class="card-title">⚡ 複数URLを一括追加</div>
-      <div class="form-group">
-        <label class="form-label">YouTube URL（1行に1つ）</label>
-        <textarea class="form-textarea" id="bulk-urls" rows="5" placeholder="https://www.youtube.com/watch?v=AAA&#10;https://youtu.be/BBB"></textarea>
-        <div class="form-hint">動画タイトルから曲名を自動判定して追加します。違っていたら各曲の ✎ で直してください。<br>プレイリストやミックスのURLは下の「プレイリストから一括取り込み」を使ってください。</div>
-      </div>
-      <div class="actions-right"><button class="btn-sub" onclick="bulkAddSongs()">一括で追加</button></div>
-    </div>
-    <div class="card" id="playlist-card">
-      <div class="card-title">📋 プレイリストから一括取り込み</div>
-      <div class="form-group">
-        <label class="form-label">プレイリストURL</label>
-        <input class="form-input" id="pl-url" type="text" placeholder="https://www.youtube.com/playlist?list=PLxxxxxxxx">
-        <div class="form-hint">通常のプレイリストに加え、YouTubeの自動生成ミックス（list=RD...）やYouTube Musicのプレイリストにも対応。ミックスはYouTubeの仕様上、先頭の数十曲までです。非公開リストや「高く評価した動画」など本人専用のリストは取り込めません。登録済みの曲は自動でスキップします。各曲の正解には、動画タイトルとチャンネル名から自動判定した曲名が入ります（例：「ヒグチアイ / 悪魔の子 (アニメスペシャルVer.) | …」→「悪魔の子」）。一覧には元の動画タイトルが表示されるので、違っていたら ✎ で直してください。</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">ジャンル（取り込む全曲に適用）</label>
-        <select class="form-select" id="pl-genre">
-          <option value="">未分類</option><option value="J-POP">J-POP</option><option value="アニメ">アニメ</option>
-          <option value="ゲーム">ゲーム</option><option value="洋楽">洋楽</option><option value="K-POP">K-POP</option>
-          <option value="ボカロ">ボカロ</option><option value="その他">その他</option>
-        </select>
-      </div>
-      <div class="actions-right"><button class="btn-sub" id="pl-btn" onclick="importPlaylist()">取り込む</button></div>
-    </div>
-    <div style="display:flex; align-items:center; justify-content:space-between; margin:24px 0 12px;">
-      <div style="font-size:13px; color:var(--color-muted);" id="detail-song-count">0 曲</div>
+
+    <div class="section-head" style="margin-top:8px;">
+      <h2>🎵 曲 <span id="detail-song-count" style="color:var(--color-muted); font-size:14px;">0 曲</span></h2>
       <button class="btn-sub" id="detail-autoname" onclick="openAutoname()" style="padding:8px 14px; font-size:13px;" title="動画タイトルから曲名を判定し、よみがなも付けて、正解をまとめて整えます">🪄 曲名・よみを自動入力</button>
     </div>
     <div id="detail-songs"></div>
@@ -1292,7 +1339,7 @@ function listCardHtml(l, opts){
     ? `<div class="list-cover${pics.length<4?' single':''}" style="--cover-a:hsl(${hue} 55% 35%); --cover-b:hsl(${(hue+60)%360} 50% 18%);">${(pics.length<4?pics.slice(0,1):pics).map(v=>`<img src="https://img.youtube.com/vi/${v}/mqdefault.jpg" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`).join('')}</div>`
     : `<div class="list-cover single" style="--cover-a:hsl(${hue} 55% 35%); --cover-b:hsl(${(hue+60)%360} 50% 18%);"><div class="list-cover-empty">🎵</div></div>`;
   const play=songs.length?`<button class="list-play" title="このリストでひとりで遊ぶ" onclick="event.stopPropagation(); quickPlaySolo('${l.id}')">▶</button>`:'';
-  return `<div class="list-card${opts&&opts.selected?' selected':''}" data-list="${l.id}" onclick="${opts&&opts.onclick||''}">
+  return `<div class="list-card${opts&&opts.selected?' selected':''}" role="button" tabindex="0" data-list="${l.id}" onclick="${opts&&opts.onclick||''}">
     <div style="position:relative;">${cover}<div class="list-badges">${vis}${mine}</div>${opts&&opts.noPlay?'':play}</div>
     <div class="list-body"><div class="list-card-name" title="${escAttr(l.name)}">${escHtml(l.name)}</div><div class="list-card-meta">${songs.length} 曲 ・ by ${escHtml(l.ownerName||'?')}</div></div>
   </div>`;
@@ -1432,12 +1479,19 @@ function openListDetail(id){
   const editable = list.ownerUuid===getUser().uuid;
   document.getElementById('detail-list-name').textContent=list.name;
   document.getElementById('detail-list-meta').textContent=`${list.visibility==='public'?'🌐 公開':'🔒 個人用'} ・ by ${list.ownerName||'?'}`;
-  document.getElementById('add-song-card').style.display=editable?'':'none';
-  document.getElementById('bulk-card').style.display=editable?'':'none';
-  document.getElementById('playlist-card').style.display=editable?'':'none';
+  document.getElementById('add-song-panel').style.display=editable?'':'none';
   document.getElementById('detail-delete-list').style.display=editable?'':'none';
   document.getElementById('detail-autoname').style.display=editable?'':'none';
+  // 曲がまだないリストは「追加」を目立たせる（プレイリストのタブから）
+  setAddTab((list.songs||[]).length?addTabLast:'playlist');
   resetSongForm(); renderDetailSongs(); showPage('list-detail');
+}
+// 曲の追加方法のタブ（プレイリスト／URLをまとめて／1曲ずつ）
+let addTabLast='playlist';
+function setAddTab(tab){
+  addTabLast=tab;
+  document.querySelectorAll('#add-song-panel .seg-tab').forEach(b=>{ const on=b.dataset.tab===tab; b.classList.toggle('active',on); b.setAttribute('aria-selected',on); });
+  document.querySelectorAll('#add-song-panel .seg-panel').forEach(p=>{ p.hidden=p.dataset.panel!==tab; });
 }
 function resetSongForm(){
   document.getElementById('f-url').value=''; document.getElementById('f-title').value='';
@@ -2018,7 +2072,8 @@ function renderDetailSongs(){
   const el=document.getElementById('detail-songs'); const editable=list.ownerUuid===getUser().uuid;
   const songs=list.songs||[];
   document.getElementById('detail-song-count').textContent=`${songs.length} 曲`;
-  if(songs.length===0){ el.innerHTML='<div class="empty-list">まだ曲がありません</div>'; return; }
+  document.getElementById('detail-play').style.display=songs.length?'':'none';
+  if(songs.length===0){ el.innerHTML=`<div class="empty-list">まだ曲がありません${editable?'。上の「＋ 曲を追加」から、YouTube のプレイリストをまるごと取り込めます。':''}</div>`; return; }
   el.innerHTML=songs.map((s,i)=>{
     const sub=[ (s.answers||[]).join(' / '), (s.yomigana||[]).length?`よみ: ${s.yomigana.join(' / ')}`:'' , s.chorusStart!=null?`サビ: ${s.chorusStart}秒`:''].filter(Boolean).join('　');
     const thumb=`https://img.youtube.com/vi/${s.videoId}/mqdefault.jpg`;
@@ -2181,6 +2236,10 @@ function renderLobby(id, room){
   if(lp.dataset.key!==key){ lp.innerHTML=tilesHtml; lp.dataset.key=key; players.forEach(p=>seen.add(p.uuid)); }
 
   document.getElementById('lobby-host-settings').style.display=isHost?'':'none';
+  // ホスト：画面下に「▶ 対戦を開始」を固定
+  document.getElementById('lobby-cta').hidden=!isHost;
+  document.querySelector('#page-room-lobby .container').classList.toggle('has-sticky-cta', isHost);
+  if(isHost) document.getElementById('lobby-cta-text').innerHTML=`${players.length}人が参加中<small>${players.length<2?'友達を招待してから始めましょう':'準備ができたら開始'}</small>`;
   document.getElementById('lobby-guest-wait').style.display=isHost?'none':'';
   document.getElementById('lobby-leave-btn').textContent=isHost?'部屋を解散する':'部屋を退出';
 
@@ -2213,7 +2272,7 @@ function populateHostSettings(s){
 let suggestOn=true;
 function setSuggest(on){
   suggestOn=on;
-  document.getElementById('suggest-track').classList.toggle('on',on);
+  document.getElementById('suggest-track').classList.toggle('on',on); refreshToggleAria();
   document.getElementById('suggest-label').textContent=on?'ON':'OFF';
 }
 function toggleSuggest(){ setSuggest(!suggestOn); }
@@ -2227,7 +2286,7 @@ function buildChoiceSet(pool){
 let yaminabeOn=false;
 function setYaminabe(on){
   yaminabeOn=on;
-  document.getElementById('yaminabe-track').classList.toggle('on',on);
+  document.getElementById('yaminabe-track').classList.toggle('on',on); refreshToggleAria();
   document.getElementById('yaminabe-label').textContent=on?'ON':'OFF';
   document.getElementById('set-list-group').style.display=on?'none':'';
   document.getElementById('set-genre-group').style.display=on?'none':'';
@@ -2244,7 +2303,7 @@ function populateYaminabeGenre(preset){
 let chorusOn=false;
 function setChorus(on){
   chorusOn=on;
-  document.getElementById('chorus-track').classList.toggle('on',on);
+  document.getElementById('chorus-track').classList.toggle('on',on); refreshToggleAria();
   document.getElementById('chorus-label').textContent=on?'ON':'OFF';
 }
 function toggleChorus(){ setChorus(!chorusOn); }
@@ -2262,7 +2321,7 @@ function onSettingListChange(presetGenre){
 let handicapOn=false;
 function setHandicap(on){
   handicapOn=on;
-  document.getElementById('handicap-track').classList.toggle('on',on);
+  document.getElementById('handicap-track').classList.toggle('on',on); refreshToggleAria();
   document.getElementById('handicap-label').textContent=on?'ON':'OFF';
   document.getElementById('handicap-config').style.display=on?'':'none';
 }
@@ -3298,6 +3357,8 @@ let setupSelectedListId=null;
 function renderSetup(){
   setupSelectedListId=null;
   setSoloSuggest(soloSuggestOn);
+  document.getElementById('setup-cta').hidden=true;
+  document.querySelector('#page-setup .container').classList.remove('has-sticky-cta');
   document.getElementById('setup-start-btn').disabled=true;
   document.getElementById('setup-genre-card').style.display='none';
   const grid=document.getElementById('setup-list-grid');
@@ -3315,6 +3376,11 @@ function selectSetupList(id){
   sel.innerHTML='<option value="">すべてのジャンル</option>'+genres.map(g=>`<option value="${escAttr(g)}">${escHtml(g)}</option>`).join('');
   document.getElementById('setup-genre-card').style.display=genres.length?'':'none';
   document.getElementById('setup-start-btn').disabled=false;
+  // 画面下に「▶ スタート」を出す（一覧が長くても下までスクロールしなくてよいように）
+  const playable=(list.songs||[]).filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）').length;
+  document.getElementById('setup-cta-text').innerHTML=`${escHtml(list.name)}<small>${playable}曲から出題</small>`;
+  document.getElementById('setup-cta').hidden=false;
+  document.querySelector('#page-setup .container').classList.add('has-sticky-cta');
 }
 
 let quiz={};
@@ -3326,7 +3392,7 @@ function kbHint(t){ return HAS_KEYBOARD?t:''; }
 let soloSuggestOn=lsGet(LS.soloSuggest, true)!==false;
 function setSoloSuggest(on){
   soloSuggestOn=on; lsSet(LS.soloSuggest, on);
-  document.getElementById('solo-suggest-track').classList.toggle('on',on);
+  document.getElementById('solo-suggest-track').classList.toggle('on',on); refreshToggleAria();
   document.getElementById('solo-suggest-label').textContent=on?'ON':'OFF';
 }
 function toggleSoloSuggest(){ setSoloSuggest(!soloSuggestOn); }
@@ -3492,7 +3558,8 @@ function submitAnswer(){
   document.getElementById('score-text').textContent=`${quiz.score} 正解`;
   quiz.results.push({ title:s.title, answer:(s.answers||[]).join(' / '), userInput:ua, correct:isCorrect, videoId:s.videoId });
   const nb=document.getElementById('next-btn'); nb.className='next-btn show';
-  nb.textContent=(quiz.current>=quiz.songs.length-1)?'結果を見る →':'次の問題 →';
+  nb.textContent=((quiz.current>=quiz.songs.length-1)?'結果を見る →':'次の問題 →')+kbHint('（Enter）');
+  nb.focus();   // Enter で次へ（Space は曲の続きを聴く）
 }
 function nextQuestion(){ if(quiz.current>=quiz.songs.length-1) showResult(); else { quiz.current++; loadQuestion(); } }
 // 再生を止めてタイマー類を解除
@@ -3572,6 +3639,8 @@ function renderStats(){
 // ============================================================
 // ページ切替・モーダル・ユーティリティ
 // ============================================================
+// 下位ページで光らせるナビのタブ
+const NAV_PARENT={ 'list-detail':'lists', 'room-lobby':'rooms', 'setup':'home', 'result':'home' };
 function showPage(name){
   // 部屋の画面は Firebase の更新のたびに呼ばれるので、同じページなら切替・スクロールはしない
   const page=document.getElementById('page-'+name);
@@ -3579,7 +3648,8 @@ function showPage(name){
     document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
     document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active-nav'));
     page.classList.add('active');
-    document.querySelectorAll(`.nav-btn[data-page="${name}"]`).forEach(b=>b.classList.add('active-nav'));
+    const navName=NAV_PARENT[name]||name;
+    document.querySelectorAll(`.nav-btn[data-page="${navName}"]`).forEach(b=>b.classList.add('active-nav'));
     window.scrollTo(0,0);
   }
   setNavLocked(name==='match' || name==='quiz');
@@ -3606,6 +3676,21 @@ function updateHomeStats(){
   document.getElementById('stat-rooms').textContent=publicRooms().length;
   renderHomeProfile(); renderHomeLists();
 }
+// スイッチの ON/OFF を読み上げ用の属性にも反映
+function refreshToggleAria(){
+  document.querySelectorAll('.toggle-switch').forEach(sw=>{ const t=sw.querySelector('.toggle-track'); if(t) sw.setAttribute('aria-checked', t.classList.contains('on')?'true':'false'); });
+}
+// キーボード操作：Esc でダイアログを閉じる、Enter/Space でカード・スイッチを押す
+document.addEventListener('keydown', e=>{
+  if(e.key==='Escape'){
+    const open=[...document.querySelectorAll('.modal-overlay.open')].pop();
+    if(open){ open.classList.remove('open'); e.preventDefault(); }
+    return;
+  }
+  if(e.key!=='Enter' && e.key!==' ') return;
+  const t=e.target;
+  if(t && t.matches && t.matches('[role="button"],[role="switch"]') && t.tagName!=='BUTTON'){ e.preventDefault(); t.click(); }
+});
 function openModal(id){ document.getElementById(id).classList.add('open'); }
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 function openConfirm(title,text,onYes,yesLabel){
