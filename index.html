@@ -475,6 +475,11 @@
   .delta, .rank-move { font-size:12px; font-weight:800; padding:2px 8px; border-radius:999px; animation:popIn .4s cubic-bezier(.2,1.5,.4,1) both; }
   .delta.up { color:#062b1d; background:var(--color-correct); } .delta.down { color:#fff; background:var(--color-wrong); }
   .rank-move.up { color:var(--color-correct); } .rank-move.down { color:var(--color-wrong); }
+  .hint-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:10px; }
+  .hint-btn { padding:6px 12px; border-radius:999px; border:1px dashed var(--color-border-strong); background:none; color:var(--color-muted); font:inherit; font-size:12px; font-weight:700; cursor:pointer; }
+  .hint-btn:hover:not(:disabled) { color:var(--color-accent); border-color:var(--color-accent); }
+  .hint-btn:disabled { opacity:.5; cursor:default; }
+  .hint-text { font-size:16px; font-weight:800; letter-spacing:2px; color:var(--color-accent); }
   .yt-search-row { display:flex; gap:8px; }
   .yt-search-row .form-input { flex:1; min-width:0; }
   .yt-search-row .btn-primary { padding:10px 20px; font-size:14px; white-space:nowrap; }
@@ -1192,6 +1197,7 @@
         <button class="submit-btn" id="submit-btn" onclick="submitAnswer()">判定</button>
       </div>
       <div class="choice-grid" id="solo-choice-grid" style="display:none;"></div>
+      <div class="hint-row" id="solo-hint-row"><button class="hint-btn" id="solo-hint-btn" type="button" onclick="soloHint()">💡 ヒント（文字数）</button><span class="hint-text" id="solo-hint-text"></span></div>
     </div>
     <div class="feedback-box" id="feedback-box"><img class="feedback-thumb" id="feedback-thumb" alt="" onerror="this.style.display='none'"><div><div class="feedback-title" id="feedback-title"></div><div class="feedback-answer" id="feedback-answer"></div></div></div>
     <button class="next-btn" id="next-btn" onclick="nextQuestion()">次の問題 →</button>
@@ -4061,7 +4067,7 @@ function shareText(text, query=''){
 }
 function shareSoloResult(){
   const list=soloListById(quiz.listId); const total=quiz.results.length;
-  const marks=quiz.results.map(r=>r.correct?'🟩':'🟥').join('');
+  const marks=quiz.results.map(r=>r.correct?(r.hint?'🟨':'🟩'):'🟥').join('');
   const times=quiz.results.filter(r=>r.correct && r.time!=null).map(r=>r.time);
   const avg=times.length?(times.reduce((a,b)=>a+b,0)/times.length).toFixed(1):null;
   if(quiz.daily){
@@ -4440,7 +4446,7 @@ function dailyLog(){ const v=lsGet(LS.daily, {}); return (v && typeof v==='objec
 // 記録は1日1回（最初に最後まで遊んだ結果）。古い記録は120日分だけ残す
 function recordDaily(avg){
   const log=dailyLog(); if(log[quiz.daily]) return false;
-  log[quiz.daily]={ score:quiz.score, total:quiz.songs.length, marks:quiz.results.map(r=>r.correct?1:0), avg };
+  log[quiz.daily]={ score:quiz.score, total:quiz.songs.length, marks:quiz.results.map(r=>r.correct?(r.hint?2:1):0), avg };
   const keys=Object.keys(log).sort(); keys.slice(0, Math.max(0, keys.length-120)).forEach(k=>delete log[k]);
   lsSet(LS.daily, log); return true;
 }
@@ -4451,7 +4457,7 @@ function dailyStreak(){
   while(log[d.toISOString().slice(0,10)]){ n++; d.setUTCDate(d.getUTCDate()-1); }
   return n;
 }
-const dailyMarks=rec=>(rec.marks||[]).map(m=>m?'🟩':'🟥').join('');
+const dailyMarks=rec=>(rec.marks||[]).map(m=>m===2?'🟨':m?'🟩':'🟥').join('');   // 2＝ヒントを使って正解
 // 成績ページ：今日のチャレンジの記録（この端末）
 function renderDailyStats(){
   const el=document.getElementById('daily-stats-card'); if(!el) return;
@@ -4511,6 +4517,8 @@ function loadQuestion(){
   document.getElementById('solo-giveup-btn').style.display='none';
   document.getElementById('solo-skip-btn').style.display='none';
   document.getElementById('solo-answer-area').style.display='none';
+  quiz.hintLevel=0; document.getElementById('solo-hint-text').textContent='';
+  const hb=document.getElementById('solo-hint-btn'); hb.disabled=false; hb.textContent='💡 ヒント（文字数）';
   renderChoiceGrid('solo-choice-grid', null); document.querySelector('#solo-answer-area .answer-input-wrap').style.display='';
   setSoloPauseBtn(null);
   setSoloCover(false,'▶ を押して再生'+kbHint('（Space でもOK）'));
@@ -4626,6 +4634,25 @@ function updateOnlineBanner(online){
     offlineTimer=setTimeout(()=>{ offlineTimer=null; if(!isOnline) banner.hidden=false; }, 1500);
   }
 }
+// ===== ソロのヒント：1回目は文字数、2回目は1文字目（ヒントを使って正解した問題は 🟨） =====
+function hintMask(answer, reveal){
+  const chars=[...String(answer||'')];
+  let shown=0;
+  return chars.map(c=>{
+    if(!/[\p{L}\p{N}]/u.test(c)) return c;          // 記号・空白はそのまま見せる
+    shown++; return (shown<=reveal)?c:'○';
+  }).join('');
+}
+function soloHint(){
+  if(quiz.answered) return;
+  const s=quiz.songs[quiz.current]; const a=(s.answers||[])[0]||'';
+  quiz.hintLevel=Math.min(2,(quiz.hintLevel||0)+1);
+  const n=[...a].filter(c=>/[\p{L}\p{N}]/u.test(c)).length;
+  document.getElementById('solo-hint-text').textContent=`${hintMask(a, quiz.hintLevel>=2?1:0)}（${n}文字）`;
+  const b=document.getElementById('solo-hint-btn');
+  if(quiz.hintLevel>=2){ b.disabled=true; b.textContent='💡 ヒント'; } else b.textContent='💡 もう1つヒント（1文字目）';
+  const inp=document.getElementById('answer-input'); if(inp.offsetParent) inp.focus();
+}
 function soloRevealAnswerInput(){
   document.getElementById('solo-buzz-btn').style.display='none';
   document.getElementById('solo-answer-area').style.display='';
@@ -4635,6 +4662,7 @@ function soloRevealAnswerInput(){
   const useGrid=!!(quiz.options && quiz.options.length>=2);
   renderChoiceGrid('solo-choice-grid', useGrid?quiz.options:null, 'chooseSoloOption');
   document.querySelector('#solo-answer-area .answer-input-wrap').style.display=useGrid?'none':'';
+  document.getElementById('solo-hint-row').style.display=useGrid?'none':'';   // 4択ではヒントなし
   if(!useGrid) document.getElementById('answer-input').focus();
 }
 function chooseSoloOption(i){
@@ -4749,7 +4777,7 @@ function submitAnswer(giveUp){
   const th=document.getElementById('feedback-thumb'); th.style.display=''; th.src=`https://img.youtube.com/vi/${s.videoId}/mqdefault.jpg`;
   hideSuggest('answer-input');
   document.getElementById('score-text').textContent=`${quiz.score} 正解`;
-  quiz.results.push({ title:s.title, answer:(s.answers||[]).join(' / '), userInput:ua, correct:isCorrect, videoId:s.videoId, time:quiz.lastTime });
+  quiz.results.push({ title:s.title, answer:(s.answers||[]).join(' / '), userInput:ua, correct:isCorrect, videoId:s.videoId, time:quiz.lastTime, hint:(quiz.hintLevel||0)>0 });
   const nb=document.getElementById('next-btn'); nb.className='next-btn show';
   nb.textContent=((quiz.current>=quiz.songs.length-1)?'結果を見る →':'次の問題 →')+kbHint('（Enter）');
   nb.focus();   // Enter で次へ（Space は曲の続きを聴く）
@@ -4819,7 +4847,7 @@ function showResult(partial){
     const best=recordSoloBest(avg);
     if(best && best.better && best.prev) document.getElementById('result-msg').textContent='🎊 自己ベスト更新！ '+msg;
   }
-  document.getElementById('result-list').innerHTML=quiz.results.map(r=>`<div class="result-item"><span style="font-size:18px;">${r.correct?'✅':'❌'}</span>${r.videoId?`<img class="result-thumb" src="https://img.youtube.com/vi/${safeId(r.videoId)}/mqdefault.jpg" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:''}<div style="flex:1; min-width:0;"><div style="font-weight:800;">${escHtml(r.answer||r.title)}</div><div style="color:var(--color-muted); font-size:12px; margin-top:2px;">あなたの答え：${escHtml(r.userInput)}</div></div>${r.correct&&r.time!=null?`<span class="sub-time">${r.time.toFixed(2)}秒</span>`:''}</div>`).join('');
+  document.getElementById('result-list').innerHTML=quiz.results.map(r=>`<div class="result-item"><span style="font-size:18px;" title="${r.hint?'ヒントを使って正解':''}">${r.correct?(r.hint?'💡':'✅'):'❌'}</span>${r.videoId?`<img class="result-thumb" src="https://img.youtube.com/vi/${safeId(r.videoId)}/mqdefault.jpg" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:''}<div style="flex:1; min-width:0;"><div style="font-weight:800;">${escHtml(r.answer||r.title)}</div><div style="color:var(--color-muted); font-size:12px; margin-top:2px;">あなたの答え：${escHtml(r.userInput)}</div></div>${r.correct&&r.time!=null?`<span class="sub-time">${r.time.toFixed(2)}秒</span>`:''}</div>`).join('');
   showPage('result');
   // 円グラフを0から伸ばす
   const ring=document.getElementById('result-ring'); let p=0; const target=pct*100;
