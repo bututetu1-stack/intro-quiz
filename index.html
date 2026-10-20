@@ -327,6 +327,19 @@
   .answer-input:disabled { opacity:0.75; }
   .submit-btn { background:var(--color-accent); color:#1a1300; border:none; padding:14px 28px; font-weight:800; font-size:15px; border-radius:999px; cursor:pointer; white-space:nowrap; box-shadow:0 5px 0 var(--color-accent-deep); transition:transform .08s ease, box-shadow .08s ease; }
   .submit-btn:active { transform:translateY(4px); box-shadow:0 1px 0 var(--color-accent-deep); } .submit-btn:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+  /* 4択（Kahoot風の色と形） */
+  .choice-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:6px 0 4px; }
+  .choice-btn { position:relative; min-height:68px; border:none; border-radius:16px; color:#fff; font-weight:800; font-size:16px; padding:12px 14px; text-align:left; display:flex; align-items:center; gap:10px; cursor:pointer;
+    box-shadow:0 5px 0 rgba(0,0,0,0.3); transition:transform .07s ease, box-shadow .07s ease, opacity .2s; text-shadow:0 1px 2px rgba(0,0,0,0.25); }
+  .choice-btn:active { transform:translateY(4px); box-shadow:0 1px 0 rgba(0,0,0,0.3); }
+  .choice-btn:nth-child(1){ background:#e5484d; } .choice-btn:nth-child(2){ background:#3e7bfa; } .choice-btn:nth-child(3){ background:#d99b06; } .choice-btn:nth-child(4){ background:#23a565; }
+  .choice-btn .shape { font-size:20px; flex-shrink:0; opacity:.9; }
+  .choice-btn .choice-text { flex:1; min-width:0; overflow-wrap:anywhere; line-height:1.35; }
+  .choice-btn kbd { font-family:var(--font-body); font-size:11px; background:rgba(0,0,0,0.2); border-radius:6px; padding:0 6px; }
+  .choice-btn.is-correct { box-shadow:0 0 0 4px #fff, 0 5px 0 rgba(0,0,0,0.3); }
+  .choice-btn.is-wrong { filter:grayscale(.3); outline:3px dashed #fff; }
+  .choice-btn.is-dim { opacity:.3; }
+  .choice-btn:disabled { cursor:default; }
   /* 回答候補（Heardle風のドロップダウン。入力欄の上に出す） */
   .suggest-box { position:absolute; left:0; right:0; bottom:calc(100% + 8px); background:#1f1b3d; border:1px solid var(--color-border-strong); border-radius:var(--radius); box-shadow:0 -12px 32px rgba(0,0,0,0.45); max-height:min(300px,45vh); overflow-y:auto; z-index:60; display:none; padding:6px; }
   .suggest-box.open { display:block; }
@@ -789,6 +802,14 @@
         </div>
       </div>
       <div class="form-group">
+        <label class="form-label">4択モード（曲名を入力せず、4つから選ぶ）</label>
+        <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleChoiceMode()">
+          <div class="toggle-track" id="choice-track"><div class="toggle-knob"></div></div>
+          <span style="font-size:13px;" id="choice-label">OFF</span>
+        </div>
+        <div class="form-hint">早押しのあと、4つの曲名から答えを選びます。スマホでも遊びやすく、初めての人がいるときにおすすめ。</div>
+      </div>
+      <div class="form-group">
         <label class="form-label">結果発表のあと自動で次の問題へ</label>
         <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleAutoNext()">
           <div class="toggle-track" id="autonext-track"><div class="toggle-knob"></div></div>
@@ -904,6 +925,7 @@
           </div>
           <button class="submit-btn" onclick="submitMatchAnswer()">回答</button>
         </div>
+        <div class="choice-grid" id="match-choice-grid" style="display:none;"></div>
         <button class="btn-sub" style="width:100%; margin-top:10px;" onclick="passMatch()">わからない（パス）</button>
       </div>
 
@@ -988,6 +1010,14 @@
         </div>
         <div class="form-hint">入力中に、選んだリストの曲名を候補として表示します。OFFにすると候補なしで答えます。</div>
       </div>
+      <div class="form-group" style="margin:14px 0 0;">
+        <label class="form-label">4択モード</label>
+        <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleSoloChoice()">
+          <div class="toggle-track" id="solo-choice-track"><div class="toggle-knob"></div></div>
+          <span style="font-size:13px;" id="solo-choice-label">OFF</span>
+        </div>
+        <div class="form-hint">曲名を入力せず、4つの選択肢から選びます。</div>
+      </div>
     </div>
     <div class="actions-right"><button class="btn-primary start-btn" id="setup-start-btn" onclick="startSoloQuiz()" disabled>▶ スタート</button></div>
     <div class="sticky-cta" id="setup-cta" hidden>
@@ -1036,6 +1066,7 @@
         </div>
         <button class="submit-btn" id="submit-btn" onclick="submitAnswer()">判定</button>
       </div>
+      <div class="choice-grid" id="solo-choice-grid" style="display:none;"></div>
     </div>
     <div class="feedback-box" id="feedback-box"><img class="feedback-thumb" id="feedback-thumb" alt="" onerror="this.style.display='none'"><div><div class="feedback-title" id="feedback-title"></div><div class="feedback-answer" id="feedback-answer"></div></div></div>
     <button class="next-btn" id="next-btn" onclick="nextQuestion()">次の問題 →</button>
@@ -1317,7 +1348,7 @@ const YT_API_KEY = "AIzaSyB7OK_8ozVW29QRW7UdfE2IJ86E5yV22B4";
 // グローバル状態
 // ============================================================
 const STATE = { lists: [], rooms: [], users: [], user: null, currentRoomId: null };
-const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest', soloCount: 'iq_solo_count', soloLimit: 'iq_solo_limit', hostSettings: 'iq_host_settings' };
+const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest', soloCount: 'iq_solo_count', soloLimit: 'iq_solo_limit', hostSettings: 'iq_host_settings', soloChoice: 'iq_solo_choice' };
 
 function lsGet(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
@@ -1406,6 +1437,43 @@ function listCardHtml(l, opts){
     <div class="list-body"><div class="list-card-name" title="${escAttr(l.name)}">${escHtml(l.name)}</div><div class="list-card-meta">${songs.length} 曲 ・ by ${escHtml(l.ownerName||'?')}</div></div>
   </div>`;
 }
+// ===== 4択モード =====
+// 選択肢：正解（最初の正解）＋候補の曲名から3つ（表記が同じものは除く）をシャッフル
+function makeOptions(answer, names){
+  const key=normalize(answer||''); const seen=new Set([key]); const wrong=[];
+  for(const n of [...(names||[])].sort(()=>Math.random()-0.5)){
+    const k=normalize(n||''); if(!k || seen.has(k)) continue;
+    seen.add(k); wrong.push(n); if(wrong.length>=3) break;
+  }
+  return [answer, ...wrong].sort(()=>Math.random()-0.5);
+}
+const CHOICE_SHAPES=['▲','◆','●','■'];
+// 4択ボタンを描く（同じ選択肢なら描き直さない）。opts が null なら隠す
+function renderChoiceGrid(elId, opts, fn){
+  const el=document.getElementById(elId); if(!el) return;
+  if(!opts || opts.length<2){ el.style.display='none'; el.innerHTML=''; el.dataset.key=''; return; }
+  el.style.display='';
+  const key=opts.join(String.fromCharCode(1)); if(el.dataset.key===key) return;
+  el.dataset.key=key;
+  el.innerHTML=opts.map((o,i)=>`<button class="choice-btn" type="button" onclick="${fn}(${i})"><span class="shape" aria-hidden="true">${CHOICE_SHAPES[i]||''}</span><span class="choice-text">${escHtml(o)}</span>${HAS_KEYBOARD?`<kbd>${i+1}</kbd>`:''}</button>`).join('');
+}
+// 答え合わせの色付け（正解を光らせ、選んだ不正解を赤に、残りを薄く）
+function markChoiceGrid(elId, answers, chosen){
+  const keys=(answers||[]).map(a=>normalize(a||''));
+  document.querySelectorAll('#'+elId+' .choice-btn').forEach((b,i)=>{
+    const ok=keys.includes(normalize(b.querySelector('.choice-text').textContent));
+    b.classList.toggle('is-correct', ok); b.classList.toggle('is-wrong', !ok && i===chosen); b.classList.toggle('is-dim', !ok && i!==chosen);
+    b.disabled=true;
+  });
+}
+// PC：数字キー 1〜4 で選ぶ
+document.addEventListener('keydown', e=>{
+  if(!/^[1-4]$/.test(e.key)) return;
+  const tag=(document.activeElement&&document.activeElement.tagName)||''; if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return;
+  const grid=document.getElementById('page-match').classList.contains('active')?'match-choice-grid':(document.getElementById('page-quiz').classList.contains('active')?'solo-choice-grid':null);
+  if(!grid) return; const el=document.getElementById(grid); if(!el || el.style.display==='none') return;
+  const b=el.querySelectorAll('.choice-btn')[+e.key-1]; if(b && !b.disabled){ e.preventDefault(); b.click(); }
+});
 // ===== 回答候補のドロップダウン（曲名・よみがなで絞り込み。Heardle風に入力欄の上へ出す） =====
 const suggestState={};
 function setSuggestItems(inputId, boxId, choices, yomi){
@@ -2309,6 +2377,7 @@ function enterLobby(id){
 
 // 対戦設定の概要（参加者向け）
 function settingsSummaryHtml(s){
+  const choice=s.choiceMode?'<span class="pill">4択</span>':'';
   const ids=Array.isArray(s.listIds)?s.listIds:(s.listId?[s.listId]:[]);
   if(!s.yaminabe && !ids.length) return '<span class="pill">ホストが設定中です</span>';
   const names=s.yaminabe?['闇鍋（全リストから）']:ids.map(i=>{ const l=getList(i); return l?l.name:'（非公開のリスト）'; });
@@ -2318,6 +2387,7 @@ function settingsSummaryHtml(s){
     `<span class="pill">${count>0?count+'問':'全曲'}</span>`,
     `<span class="pill">⏱ ${s.songLimit||30}秒</span>`,
     `<span class="pill">${s.suggestOn===false?'回答候補なし':'回答候補あり'}</span>`,
+    choice,
     s.chorusOn?'<span class="pill">サビ再生</span>':'',
     s.handicap?'<span class="pill">ハンデ戦</span>':''
   ].join('');
@@ -2387,6 +2457,7 @@ function populateHostSettings(s){
   document.getElementById('set-song-limit').value = String(s.songLimit ?? 30);
   setSuggest(s.suggestOn ?? true);
   setAutoNext(!!s.autoNext);
+  setChoiceMode(!!s.choiceMode);
   populateYaminabeGenre(s.yaminabeGenre||'');
 }
 let suggestOn=true;
@@ -2403,6 +2474,13 @@ function setAutoNext(on){
   document.getElementById('autonext-label').textContent=on?'ON':'OFF';
 }
 function toggleAutoNext(){ setAutoNext(!autoNextOn); }
+let choiceModeOn=false;
+function setChoiceMode(on){
+  choiceModeOn=on;
+  document.getElementById('choice-track').classList.toggle('on',on); refreshToggleAria();
+  document.getElementById('choice-label').textContent=on?'ON':'OFF';
+}
+function toggleChoiceMode(){ setChoiceMode(!choiceModeOn); }
 // 回答候補（出題プール全体の曲名と、そのよみがな。重複除去・シャッフル）
 function buildChoiceSet(pool){
   const seen=new Set(); const items=[];
@@ -2471,6 +2549,7 @@ function saveRoomSettings(){
     wrongPts:parseInt(document.getElementById('set-wrong-pts').value,10)||0,
     songLimit:parseInt(document.getElementById('set-song-limit').value,10)||30,
     autoNext:autoNextOn,
+    choiceMode:choiceModeOn,
     suggestOn
   };
   lsSet(LS.hostSettings, settings);   // 次に部屋を建てたときの初期値にする
@@ -2504,6 +2583,7 @@ function hostStartMatch(){
     chorusStart: (s.chorusStart!=null && s.chorusStart!=='') ? Number(s.chorusStart) : null
   }));
   const scores={}; Object.keys(room.players||{}).forEach(u=>scores[u]=0);
+  if(choiceModeOn) questions.forEach(q=>{ q.options=makeOptions((q.answers||[])[0], choices); });
   const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:yaminabeOn, choices, choiceYomi };
   matchLocal={ idx:-1, buzzSent:false, answered:false, myTurn:false, elapsed:null, chorusPlayed:false };
   db.ref('rooms/'+id).update({ status:'playing', game }).then(()=>showToast(yaminabeOn?'闇鍋スタート！':'対戦開始！','success'));
@@ -3044,10 +3124,16 @@ function renderMatch(id, room){
     buzzBtn.style.display='none'; waitEl.style.display='none'; ansWrap.style.display='';
     const t=round.answererElapsed;
     document.getElementById('match-buzz-elapsed').textContent = t!=null?`あなたに回答権！ (${t.toFixed(2)} 秒で早押し)`:'あなたに回答権！';
-    if(!matchLocal.myTurn){ matchLocal.myTurn=true; const inp=document.getElementById('match-answer-input'); inp.value=''; inp.focus(); }
+    // 4択モードなら選択肢のボタン、そうでなければ入力欄
+    const qq=g.questions[idx]; const opts=((room.settings||{}).choiceMode && Array.isArray(qq.options))?qq.options:null;
+    if(!matchLocal.myTurn) document.getElementById('match-choice-grid').dataset.key='';   // 2回目の回答権では押せる状態から描き直す
+    renderChoiceGrid('match-choice-grid', opts, 'chooseMatchOption');
+    document.querySelector('#match-answer-wrap .answer-input-wrap').style.display=(opts&&opts.length>=2)?'none':'';
+    if(!matchLocal.myTurn){ matchLocal.myTurn=true; const inp=document.getElementById('match-answer-input'); inp.value=''; if(!(opts&&opts.length>=2)) inp.focus(); }
   } else if(answerer===me && matchLocal.answered){
     buzzBtn.style.display='none'; ansWrap.style.display='none';
     waitEl.style.display=''; waitEl.textContent='判定中...';
+    renderChoiceGrid('match-choice-grid', null);
   } else if(answerer){
     buzzBtn.style.display='none'; ansWrap.style.display='none';
     waitEl.style.display='';
@@ -3134,6 +3220,17 @@ function submitMatchAnswer(){
   const q=g.questions[idx];
   const correct=[...(q.answers||[]),...(q.yomigana||[])].map(normalize).includes(normalize(ua));
   sendAnswer(room, idx, ua, correct);
+}
+// 4択モード：選んだ曲名で回答
+function chooseMatchOption(i){
+  const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
+  const g=room.game; const idx=g.current; const me=getUser().uuid;
+  const round=(g.rounds&&g.rounds[idx])||{};
+  if(round.answerer!==me || matchLocal.answered) return;
+  const q=g.questions[idx]; const opt=(q.options||[])[i]; if(opt==null) return;
+  const correct=[...(q.answers||[]),...(q.yomigana||[])].map(normalize).includes(normalize(opt));
+  markChoiceGrid('match-choice-grid', q.answers, correct?-1:i);
+  sendAnswer(room, idx, opt, correct);
 }
 function passMatch(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
@@ -3459,6 +3556,7 @@ function hostContinueMatch(excludePlayed){
     chorusStart:(x.chorusStart!=null && x.chorusStart!=='')?Number(x.chorusStart):null
   }));
   const scores={}; Object.keys(room.players||{}).forEach(u=>scores[u]=(prevGame.scores&&prevGame.scores[u])||0); // 得点引継ぎ
+  if(s.choiceMode) questions.forEach(q=>{ q.options=makeOptions((q.answers||[])[0], choices); });
   const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:!!s.yaminabe, choices, choiceYomi };
   matchLocal={ idx:-1, buzzSent:false, answered:false, myTurn:false, elapsed:null, chorusPlayed:false };
   db.ref('rooms/'+room.id).update({ status:'playing', game }).then(()=>showToast('対戦を続けます！','success'));
@@ -3596,7 +3694,7 @@ function leaveRoom(){
 let setupSelectedListId=null;
 function renderSetup(){
   setupSelectedListId=null;
-  setSoloSuggest(soloSuggestOn);
+  setSoloSuggest(soloSuggestOn); setSoloChoice(soloChoiceOn);
   document.getElementById('setup-count').value=String(lsGet(LS.soloCount,'10'));
   document.getElementById('setup-limit').value=String(lsGet(LS.soloLimit,'30'));
   document.getElementById('setup-cta').hidden=true;
@@ -3641,6 +3739,13 @@ function setSoloSuggest(on){
   document.getElementById('solo-suggest-label').textContent=on?'ON':'OFF';
 }
 function toggleSoloSuggest(){ setSoloSuggest(!soloSuggestOn); }
+let soloChoiceOn=lsGet(LS.soloChoice, false)===true;
+function setSoloChoice(on){
+  soloChoiceOn=on; lsSet(LS.soloChoice, on);
+  document.getElementById('solo-choice-track').classList.toggle('on',on); refreshToggleAria();
+  document.getElementById('solo-choice-label').textContent=on?'ON':'OFF';
+}
+function toggleSoloChoice(){ setSoloChoice(!soloChoiceOn); }
 function startSoloQuiz(listId, genreArg){
   const lid=listId||setupSelectedListId;
   const list=getList(lid); if(!list){ showToast('リストを選んでください','error'); return; }
@@ -3650,7 +3755,8 @@ function startSoloQuiz(listId, genreArg){
   let shuffled=[...pool].sort(()=>Math.random()-0.5);
   const count=parseInt(lsGet(LS.soloCount,'10'),10)||0, limit=parseInt(lsGet(LS.soloLimit,'30'),10)||30;
   if(count>0) shuffled=shuffled.slice(0,count);
-  quiz={ songs:shuffled, current:0, score:0, answered:false, buzzed:false, paused:false, results:[], timer:null, listId:lid, genre, limit, streak:0, bestStreak:0, lastTime:null };
+  quiz={ songs:shuffled, current:0, score:0, answered:false, buzzed:false, paused:false, results:[], timer:null, listId:lid, genre, limit, streak:0, bestStreak:0, lastTime:null,
+    choiceMode:soloChoiceOn, names:buildChoiceSet(pool).choices, options:null };
   const cs=soloSuggestOn?buildChoiceSet(pool):{ choices:[], choiceYomi:[] };
   setSuggestItems('answer-input','solo-suggest', cs.choices, cs.choiceYomi);
   showPage('quiz'); loadQuestion();
@@ -3677,6 +3783,7 @@ function loadQuestion(){
   document.getElementById('solo-giveup-btn').style.display='none';
   document.getElementById('solo-skip-btn').style.display='none';
   document.getElementById('solo-answer-area').style.display='none';
+  renderChoiceGrid('solo-choice-grid', null); document.querySelector('#solo-answer-area .answer-input-wrap').style.display='';
   setSoloPauseBtn(null);
   setSoloCover(false,'▶ を押して再生'+kbHint('（Space でもOK）'));
   quiz.answered=false; quiz.buzzed=false; quiz.paused=false; soloSongStart=null; soloPlaying=false;
@@ -3767,7 +3874,21 @@ function soloBuzz(){
 function soloRevealAnswerInput(){
   document.getElementById('solo-buzz-btn').style.display='none';
   document.getElementById('solo-answer-area').style.display='';
-  document.getElementById('answer-input').focus();
+  // 4択モード：選択肢を出す（曲が少なく選択肢が作れないときは入力欄）
+  const s=quiz.songs[quiz.current];
+  quiz.options=quiz.choiceMode?makeOptions((s.answers||[])[0], quiz.names):null;
+  const useGrid=!!(quiz.options && quiz.options.length>=2);
+  renderChoiceGrid('solo-choice-grid', useGrid?quiz.options:null, 'chooseSoloOption');
+  document.querySelector('#solo-answer-area .answer-input-wrap').style.display=useGrid?'none':'';
+  if(!useGrid) document.getElementById('answer-input').focus();
+}
+function chooseSoloOption(i){
+  if(quiz.answered || !quiz.options) return;
+  const opt=quiz.options[i]; if(opt==null) return;
+  document.getElementById('answer-input').value=opt;
+  submitAnswer();
+  const s=quiz.songs[quiz.current];
+  markChoiceGrid('solo-choice-grid', [...(s.answers||[]),...(s.yomigana||[])], quiz.results[quiz.results.length-1]&&quiz.results[quiz.results.length-1].correct?-1:i);
 }
 function setSoloCover(playing,text){
   const c=document.getElementById('solo-audio-cover'); if(c) c.classList.toggle('is-playing',!!playing);
@@ -3855,6 +3976,8 @@ function showQIntro(id, n, total){
   const el=document.getElementById(id); if(!el) return;
   el.innerHTML=`<div class="q-intro-num">Q${n}</div><div class="q-intro-sub">${n===total&&total>1?'ラスト！':`全${total}問`}</div>`;
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  // アニメーションが止まる環境（裏のタブなど）でも残らないよう、時間で確実に消す
+  clearTimeout(el._hideTimer); el._hideTimer=setTimeout(()=>el.classList.remove('show'), 1300);
   SFX.start();
 }
 // 再生を止めてタイマー類を解除
