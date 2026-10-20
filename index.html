@@ -1136,7 +1136,7 @@
           <textarea class="form-textarea" id="bulk-urls" rows="5" placeholder="https://www.youtube.com/watch?v=AAA&#10;https://youtu.be/BBB"></textarea>
           <div class="form-hint">動画タイトルから曲名とよみがなを自動で入れて追加します。このリストに登録済みの曲はスキップします。</div>
         </div>
-        <div class="actions-right"><button class="btn-primary" onclick="bulkAddSongs()" style="padding:12px 28px; font-size:15px;">まとめて追加</button></div>
+        <div class="actions-right"><button class="btn-primary" id="bulk-btn" onclick="bulkAddSongs()" style="padding:12px 28px; font-size:15px;">まとめて追加</button></div>
       </div>
       <div class="seg-panel" id="add-song-card" data-panel="single" hidden>
         <div class="form-group"><label class="form-label">YouTube の URL</label><input class="form-input" id="f-url" type="text" placeholder="https://www.youtube.com/watch?v=XXXXXXXXXX"></div>
@@ -1320,7 +1320,7 @@ const STATE = { lists: [], rooms: [], users: [], user: null, currentRoomId: null
 const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest', soloCount: 'iq_solo_count', soloLimit: 'iq_solo_limit', hostSettings: 'iq_host_settings' };
 
 function lsGet(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } }
-function lsSet(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 function objToArr(obj){ return obj ? Object.keys(obj).map(k => ({ ...obj[k], id: k })) : []; }
 function genUuid(){
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -1380,8 +1380,9 @@ function joinFromHome(){
   const code=document.getElementById('home-join-code').value.trim();
   if(!code){ showToast('合言葉を入力してください','error'); return; }
   document.getElementById('join-code').value=code;
+  const found=findRoomByCode(code);
   joinByCode();
-  if(STATE.currentRoomId) document.getElementById('home-join-code').value='';
+  if(found && found.status==='lobby') document.getElementById('home-join-code').value='';
 }
 function renderHomeLists(){
   const el=document.getElementById('home-lists'); if(!el) return;
@@ -1625,8 +1626,11 @@ async function bulkAddSongs(){
   const skipNotes=[]; if(dup) skipNotes.push(`${dup}曲は登録済みのためスキップ`); if(ng) skipNotes.push(`${ng}件は無効なURL`);
   if(ids.length===0){ showToast(`追加できる曲がありません（${skipNotes.join('、')||'URLを確認してください'}）`,'error'); return; }
   // 動画タイトルを取得して曲名を自動判定（取得できなければ従来どおり仮の曲として追加）
+  const btn=document.getElementById('bulk-btn'); if(btn.disabled) return;
+  btn.disabled=true; btn.textContent='追加中...';
   let meta={};
   try{ (await fetchVideoEntries(ids)).forEach(e=>meta[e.vid]=e); }catch(e){ meta=null; }
+  finally{ btn.disabled=false; btn.textContent='まとめて追加'; }
   const newIds=[];
   for(const videoId of ids){
     const m=meta&&meta[videoId];
@@ -1744,7 +1748,7 @@ async function openAutoname(){
     const yomiAdd=!hasYomi && !!yomi;
     if(!nameChange && !yomiAdd) continue;
     // 正解が動画タイトルのまま・未設定の曲は最初からチェック。手で直したらしい曲はチェックしない（よみがなを足すだけならチェック）
-    const looksAuto=!cur || cur==='（未設定）' || cur===raw || cur===s.title;
+    const looksAuto=!cur || cur==='（未設定）' || cur===raw;   // 正解が動画タイトルのまま（以前の取り込み）か未設定
     autonameRows.push({ songId:s.id, raw:raw||s.title||'', channel:(m&&m.channel)||'', cur, song, alts:nameChange?g.alts:[], yomi, yomiEdited:hasYomi, checked:nameChange?looksAuto:true });
   }
   renderAutonameRows(metaOk, yomiOk);
@@ -1793,8 +1797,8 @@ function applyAutoname(){
   for(const r of autonameRows){
     if(!r.checked || !r.song.trim()) continue;
     const s=(list.songs||[]).find(x=>x.id===r.songId); if(!s) continue;
-    // 動画タイトルそのもの・未設定の正解は置き換え、手で足した別解は残す
-    const keep=(s.answers||[]).filter(a=>a!=='（未設定）' && a!==r.raw && a!==s.title);
+    // 動画タイトルそのもの・未設定の正解は置き換え、手で入れた正解・別解は残す
+    const keep=(s.answers||[]).filter(a=>a!=='（未設定）' && a!==r.raw);
     const next=[];
     [r.song.trim(), ...r.alts, ...keep].forEach(a=>{ if(a && !next.some(x=>songKey(x)===songKey(a))) next.push(a); });
     s.answers=next;
@@ -2247,6 +2251,7 @@ function joinRoom(id){
   const room=STATE.rooms.find(r=>r.id===id);
   if(!room){ showToast('部屋が見つかりません','error'); return; }
   const u=getUser();
+  if(!u.name){ pendingInviteRoomId=id; showToast('名前を設定すると部屋に参加します'); openProfileModal(); return; }
   db.ref(`rooms/${id}/players/${u.uuid}`).set({ uuid:u.uuid, name:u.name, joinedAt:Date.now() })
     .then(()=>{ document.getElementById('join-code').value=''; enterLobby(id); });
 }
