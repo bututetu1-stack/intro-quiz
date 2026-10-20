@@ -3210,17 +3210,25 @@ async function ensureChorusAndPlay(id, room, idx){
   if(start!=null && start>=0){ local.chorusPlayed=true; playMatchChorus(q.videoId, start); }
   // 非ホストで自動値未取得なら待つ（ホストの値が届いたら次のrenderRevealで再生）
 }
+// サビ位置のキャッシュ（chorusCache）。データベースのルールで許可されていなければ、以後は読み書きしない
+let chorusCacheOff=false;
 function getCachedChorus(videoId){
-  return db.ref('chorusCache/'+videoId).once('value').then(s=>{ const v=s.val(); return (typeof v==='number')?v:null; }).catch(()=>null);
+  if(chorusCacheOff) return Promise.resolve(null);
+  return db.ref('chorusCache/'+videoId).once('value').then(s=>{ const v=s.val(); return (typeof v==='number')?v:null; })
+    .catch(()=>{ chorusCacheOff=true; return null; });
 }
-function setCachedChorus(videoId, sec){ try{ db.ref('chorusCache/'+videoId).set(sec); }catch(e){} }
+function setCachedChorus(videoId, sec){ if(chorusCacheOff) return; try{ db.ref('chorusCache/'+videoId).set(sec).catch(()=>{ chorusCacheOff=true; }); }catch(e){} }
+// 非公式 API が落ちているときに毎問3秒待たないよう、通信に失敗したら6時間は使わない（この端末に記録）
+const MR_DOWN_MS=6*3600*1000;
+function mostReplayedDown(){ return Date.now()-safeNum(lsGet('iq_mr_down',0))<MR_DOWN_MS; }
 // Most Replayed API で最も再生が多い位置（秒）を取得。失敗時は null
 async function fetchChorusStart(videoId){
+  if(mostReplayedDown()) return null;
   const ctrl=(typeof AbortController!=='undefined')?new AbortController():null;
   const abortTimer=ctrl?setTimeout(()=>ctrl.abort(), MOST_REPLAYED_TIMEOUT_MS):null;
   try{
     const res=await fetch(MOST_REPLAYED_API+encodeURIComponent(videoId), ctrl?{ signal:ctrl.signal }:undefined);
-    if(!res.ok) return null;
+    if(!res.ok){ if(res.status>=500 || res.status===429) lsSet('iq_mr_down', Date.now()); return null; }
     const data=await res.json();
     const mr=data&&data.items&&data.items[0]&&data.items[0].mostReplayed;
     const markers=(mr&&mr.markers)||[];
@@ -3233,7 +3241,7 @@ async function fetchChorusStart(videoId){
       if(score>bestScore){ bestScore=score; best=startMs/1000; }
     }
     return best;
-  }catch(e){ return null; }
+  }catch(e){ lsSet('iq_mr_down', Date.now()); return null; }   // 時間切れ・通信エラー
   finally{ if(abortTimer) clearTimeout(abortTimer); }
 }
 
