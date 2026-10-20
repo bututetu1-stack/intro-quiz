@@ -286,6 +286,14 @@
   .disc::before { content:''; position:absolute; inset:0; border-radius:50%; background:conic-gradient(from 30deg, transparent 0 15%, rgba(255,255,255,0.13) 20%, transparent 28% 65%, rgba(255,255,255,0.08) 70%, transparent 78%); }
   .disc::after { content:''; position:absolute; left:50%; top:50%; width:5%; height:5%; border-radius:50%; background:#0c0a1d; transform:translate(-50%,-50%); }
   .audio-cover.is-playing .disc { animation:spin 2.4s linear infinite; }
+  /* 出題演出「Q3」 */
+  .q-intro { position:absolute; inset:0; z-index:9; display:flex; flex-direction:column; align-items:center; justify-content:center; pointer-events:none; opacity:0;
+    background:radial-gradient(circle, rgba(12,10,29,0.55), rgba(12,10,29,0.88)); }
+  .q-intro.show { animation:qIntro 1.15s ease forwards; }
+  .q-intro-num { font-family:var(--font-display); font-weight:700; font-size:clamp(56px,14vw,96px); color:var(--color-accent); text-shadow:0 6px 30px rgba(255,210,63,0.5); line-height:1; }
+  .q-intro-sub { font-weight:800; color:#fff; margin-top:6px; letter-spacing:2px; }
+  @keyframes qIntro { 0%{ opacity:0; transform:scale(1.2); } 15%{ opacity:1; transform:scale(1); } 75%{ opacity:1; } 100%{ opacity:0; } }
+  .stat-number small { font-size:14px; margin-left:2px; }
   .audio-cover.answering { --disc-label:var(--color-accent2); }
   .audio-wave { display:flex; align-items:flex-end; gap:5px; height:34px; position:relative; z-index:1; }
   .audio-wave span { display:block; width:7px; height:10px; background:var(--color-accent); border-radius:4px; opacity:0.9; box-shadow:0 0 10px rgba(255,210,63,0.45); }
@@ -843,6 +851,7 @@
       <div class="player-area" style="position:relative;">
         <div id="match-yt" style="width:100%; aspect-ratio:16/9; background:#000;"></div>
         <!-- 動画は隠して音声のみ -->
+        <div class="q-intro" id="match-q-intro" aria-hidden="true"></div>
         <div class="audio-cover" id="match-audio-cover">
           <div class="disc" aria-hidden="true"></div>
           <div class="audio-wave"><span></span><span></span><span></span><span></span><span></span></div>
@@ -927,6 +936,20 @@
     </div>
     <div class="card">
       <div class="card-title">オプション</div>
+      <div class="row2">
+        <div class="form-group">
+          <label class="form-label">出題数</label>
+          <select class="form-select" id="setup-count" onchange="lsSet(LS.soloCount, this.value)">
+            <option value="5">5問</option><option value="10">10問</option><option value="20">20問</option><option value="0">全曲</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">1問の再生時間</label>
+          <select class="form-select" id="setup-limit" onchange="lsSet(LS.soloLimit, this.value)">
+            <option value="10">10秒（上級）</option><option value="15">15秒</option><option value="20">20秒</option><option value="30">30秒</option>
+          </select>
+        </div>
+      </div>
       <div class="form-group" style="margin-bottom:0;">
         <label class="form-label">回答候補</label>
         <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleSoloSuggest()">
@@ -958,6 +981,7 @@
     </div>
     <div class="player-area" style="position:relative;">
       <div id="solo-yt" style="width:100%; aspect-ratio:16/9; background:#000;"></div>
+      <div class="q-intro" id="solo-q-intro" aria-hidden="true"></div>
       <div class="audio-cover" id="solo-audio-cover">
         <div class="disc" aria-hidden="true"></div>
         <div class="audio-wave"><span></span><span></span><span></span><span></span><span></span></div>
@@ -995,6 +1019,7 @@
       <div class="result-total" id="result-total">/ 0 問正解</div>
     </div>
     <div class="result-msg" id="result-msg"></div>
+    <div class="home-stats" id="result-stats" style="margin:-8px 0 22px;"></div>
     <div class="result-list" id="result-list"></div>
     <div class="result-actions">
       <button class="btn-primary" style="flex:1;" onclick="retrySolo()">▶ もう一度</button>
@@ -1256,7 +1281,7 @@ const YT_API_KEY = "AIzaSyB7OK_8ozVW29QRW7UdfE2IJ86E5yV22B4";
 // グローバル状態
 // ============================================================
 const STATE = { lists: [], rooms: [], users: [], user: null, currentRoomId: null };
-const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest' };
+const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest', soloCount: 'iq_solo_count', soloLimit: 'iq_solo_limit' };
 
 function lsGet(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } }
 function lsSet(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
@@ -2783,6 +2808,7 @@ function renderMatch(id, room){
   if(matchLocal.idx!==idx){
     matchLocal={ idx, buzzSent:false, answered:false, myTurn:false, elapsed:null, chorusPlayed:false };
     resetPlayView();
+    showQIntro('match-q-intro', idx+1, g.total);
     loadMatchVideo(g.questions[idx].videoId);
   }
 
@@ -3357,6 +3383,8 @@ let setupSelectedListId=null;
 function renderSetup(){
   setupSelectedListId=null;
   setSoloSuggest(soloSuggestOn);
+  document.getElementById('setup-count').value=String(lsGet(LS.soloCount,'10'));
+  document.getElementById('setup-limit').value=String(lsGet(LS.soloLimit,'30'));
   document.getElementById('setup-cta').hidden=true;
   document.querySelector('#page-setup .container').classList.remove('has-sticky-cta');
   document.getElementById('setup-start-btn').disabled=true;
@@ -3384,7 +3412,9 @@ function selectSetupList(id){
 }
 
 let quiz={};
-const SOLO_LIMIT=30;   // 1問の再生上限（秒）
+// 1問の再生上限（秒）。ソロ設定の「1問の再生時間」で変えられる
+function soloLimit(){ return (quiz&&quiz.limit)||30; }
+let soloAudioUnlocked=false;   // 1曲目を再生できたら、2問目からは自動で再生する
 // キーボードのある端末（マウス操作できる端末）だけにキー操作の案内を出す
 const HAS_KEYBOARD=!!(window.matchMedia && matchMedia('(hover:hover) and (pointer:fine)').matches);
 function kbHint(t){ return HAS_KEYBOARD?t:''; }
@@ -3402,8 +3432,10 @@ function startSoloQuiz(listId, genreArg){
   const genre=(genreArg!=null)?genreArg:document.getElementById('setup-genre').value;
   let pool=(list.songs||[]).filter(s=>!genre||s.genre===genre).filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）');
   if(pool.length===0){ showToast('該当する曲がありません（正解未設定は除外）','error'); return; }
-  const shuffled=[...pool].sort(()=>Math.random()-0.5);
-  quiz={ songs:shuffled, current:0, score:0, answered:false, buzzed:false, paused:false, results:[], timer:null, listId:lid, genre };
+  let shuffled=[...pool].sort(()=>Math.random()-0.5);
+  const count=parseInt(lsGet(LS.soloCount,'10'),10)||0, limit=parseInt(lsGet(LS.soloLimit,'30'),10)||30;
+  if(count>0) shuffled=shuffled.slice(0,count);
+  quiz={ songs:shuffled, current:0, score:0, answered:false, buzzed:false, paused:false, results:[], timer:null, listId:lid, genre, limit, streak:0, bestStreak:0, lastTime:null };
   const cs=soloSuggestOn?buildChoiceSet(pool):{ choices:[], choiceYomi:[] };
   setSuggestItems('answer-input','solo-suggest', cs.choices, cs.choiceYomi);
   showPage('quiz'); loadQuestion();
@@ -3422,7 +3454,7 @@ function loadQuestion(){
   document.getElementById('submit-btn').disabled=false;
   document.getElementById('feedback-box').className='feedback-box';
   document.getElementById('next-btn').className='next-btn';
-  document.getElementById('timer-display').textContent=`0:${String(SOLO_LIMIT).padStart(2,'0')}`;
+  document.getElementById('timer-display').textContent=`0:${String(soloLimit()).padStart(2,'0')}`;
   document.getElementById('timer-bar').style.width='100%';
   document.getElementById('timer-bar').style.background='var(--color-accent)';
   const sb=document.getElementById('solo-start-btn'); sb.style.display=''; sb.disabled=false; sb.textContent='▶ 再生してスタート';
@@ -3434,8 +3466,11 @@ function loadQuestion(){
   if(quiz.timer) clearInterval(quiz.timer);
   if(soloStopTimer) clearTimeout(soloStopTimer);
   if(soloWatchdog) clearTimeout(soloWatchdog);
-  soloPendingVideo=s.videoId;
+  soloPendingVideo=s.videoId; quiz.lastTime=null;
   ensureSoloPlayer();
+  // 2問目からは「Q2」の演出のあと自動で再生（1曲目で音声は解禁済み）
+  showQIntro('solo-q-intro', idx+1, total);
+  if(idx>0 && soloAudioUnlocked){ sb.disabled=true; sb.textContent='まもなく再生…'; setSoloCover(false,'まもなく再生…'); clearTimeout(quiz.autoTimer); quiz.autoTimer=setTimeout(()=>{ if(quiz.songs[quiz.current]===s && !soloPlaying) soloStart(); }, 1000); }
 }
 function soloStart(){
   if(quiz.answered || !soloPendingVideo) return;
@@ -3450,6 +3485,7 @@ function soloStart(){
 // 再生位置（秒）。一時停止中は進まないので、残り時間もそのまま止まる
 function soloCurrentTime(){ try{ return soloPlayer && soloPlayer.getCurrentTime ? soloPlayer.getCurrentTime() : 0; }catch(e){ return 0; } }
 function onSoloSongStart(){
+  soloAudioUnlocked=true;
   soloPlaying=true; soloSongStart=performance.now(); quiz.paused=false;
   if(soloWatchdog) clearTimeout(soloWatchdog);
   document.getElementById('solo-start-btn').style.display='none';
@@ -3462,8 +3498,8 @@ function onSoloSongStart(){
 function soloTick(){
   if(quiz.buzzed || quiz.answered) return;
   const bar=document.getElementById('timer-bar'), disp=document.getElementById('timer-display');
-  const left=Math.max(0, SOLO_LIMIT-soloCurrentTime()), secs=Math.ceil(left);
-  disp.textContent=`0:${String(secs).padStart(2,'0')}`; bar.style.width=`${(left/SOLO_LIMIT)*100}%`;
+  const lim=soloLimit(), left=Math.max(0, lim-soloCurrentTime()), secs=Math.ceil(left);
+  disp.textContent=`0:${String(secs).padStart(2,'0')}`; bar.style.width=`${(left/lim)*100}%`;
   bar.style.background=left<=5?'var(--color-wrong)':'var(--color-accent)';
   if(left<=0){
     clearInterval(quiz.timer); quiz.buzzed=true;
@@ -3500,7 +3536,7 @@ function soloBuzz(){
   if(quiz.buzzed || quiz.answered || !soloPlaying) return;
   quiz.buzzed=true;
   SFX.buzz(); vibrate(40);
-  const elapsed=soloCurrentTime();
+  const elapsed=soloCurrentTime(); quiz.lastTime=elapsed;
   if(quiz.timer) clearInterval(quiz.timer);
   try{ soloPlayer.pauseVideo(); }catch(e){}
   setSoloPauseBtn(null);
@@ -3550,20 +3586,33 @@ function submitAnswer(){
   input.className='answer-input '+(isCorrect?'correct':'wrong'); input.disabled=true;
   document.getElementById('submit-btn').disabled=true;
   const box=document.getElementById('feedback-box');
-  if(isCorrect){ quiz.score++; box.className='feedback-box correct'; document.getElementById('feedback-title').textContent='✓ 正解！'; SFX.correct(); confetti(1800); }
-  else{ box.className='feedback-box wrong'; document.getElementById('feedback-title').textContent='✗ 不正解'; SFX.wrong(); shakeEl('answer-input'); vibrate(200); }
+  if(isCorrect){
+    quiz.score++; quiz.streak++; quiz.bestStreak=Math.max(quiz.bestStreak, quiz.streak);
+    box.className='feedback-box correct';
+    const t=quiz.lastTime!=null?`（${quiz.lastTime.toFixed(2)}秒）`:'';
+    document.getElementById('feedback-title').textContent='✓ 正解！'+t+(quiz.streak>=2?` 🔥${quiz.streak}連続`:'');
+    SFX.correct(); confetti(1800);
+  }
+  else{ quiz.streak=0; box.className='feedback-box wrong'; document.getElementById('feedback-title').textContent='✗ 不正解'; SFX.wrong(); shakeEl('answer-input'); vibrate(200); }
   document.getElementById('feedback-answer').textContent=`正解：${(s.answers||[]).join(' / ')}`;
   const th=document.getElementById('feedback-thumb'); th.style.display=''; th.src=`https://img.youtube.com/vi/${s.videoId}/mqdefault.jpg`;
   hideSuggest('answer-input');
   document.getElementById('score-text').textContent=`${quiz.score} 正解`;
-  quiz.results.push({ title:s.title, answer:(s.answers||[]).join(' / '), userInput:ua, correct:isCorrect, videoId:s.videoId });
+  quiz.results.push({ title:s.title, answer:(s.answers||[]).join(' / '), userInput:ua, correct:isCorrect, videoId:s.videoId, time:quiz.lastTime });
   const nb=document.getElementById('next-btn'); nb.className='next-btn show';
   nb.textContent=((quiz.current>=quiz.songs.length-1)?'結果を見る →':'次の問題 →')+kbHint('（Enter）');
   nb.focus();   // Enter で次へ（Space は曲の続きを聴く）
 }
 function nextQuestion(){ if(quiz.current>=quiz.songs.length-1) showResult(); else { quiz.current++; loadQuestion(); } }
+// 「Q3 / 全10問」の出題演出（見た目だけで、再生や操作は止めない）
+function showQIntro(id, n, total){
+  const el=document.getElementById(id); if(!el) return;
+  el.innerHTML=`<div class="q-intro-num">Q${n}</div><div class="q-intro-sub">${n===total&&total>1?'ラスト！':`全${total}問`}</div>`;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+}
 // 再生を止めてタイマー類を解除
 function stopSolo(){
+  if(quiz.autoTimer){ clearTimeout(quiz.autoTimer); quiz.autoTimer=null; }
   if(quiz.timer){ clearInterval(quiz.timer); quiz.timer=null; }
   if(soloStopTimer){ clearTimeout(soloStopTimer); soloStopTimer=null; }
   if(soloWatchdog){ clearTimeout(soloWatchdog); soloWatchdog=null; }
@@ -3587,7 +3636,15 @@ function showResult(partial){
   document.getElementById('result-ring').style.setProperty('--pct', '0%');
   const msg=pct>=1?'🏆 パーフェクト！イントロマスター！':pct>=0.8?'🎉 すごい！かなりの耳の持ち主':pct>=0.5?'👍 いい感じ！もう少しで上級者':pct>0?'🎧 練習あるのみ！':'😵 次こそ！';
   document.getElementById('result-msg').textContent=msg+(partial?'（途中でやめました）':'');
-  document.getElementById('result-list').innerHTML=quiz.results.map(r=>`<div class="result-item"><span style="font-size:18px;">${r.correct?'✅':'❌'}</span>${r.videoId?`<img class="result-thumb" src="https://img.youtube.com/vi/${r.videoId}/mqdefault.jpg" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:''}<div style="flex:1; min-width:0;"><div style="font-weight:800;">${escHtml(r.answer||r.title)}</div><div style="color:var(--color-muted); font-size:12px; margin-top:2px;">あなたの答え：${escHtml(r.userInput)}</div></div></div>`).join('');
+  const times=quiz.results.filter(r=>r.correct && r.time!=null);
+  const fastest=times.slice().sort((a,b)=>a.time-b.time)[0];
+  const avg=times.length?times.reduce((s,r)=>s+r.time,0)/times.length:null;
+  document.getElementById('result-stats').innerHTML=[
+    avg!=null?`<div class="stat-card"><div class="stat-number">${avg.toFixed(1)}<small>秒</small></div><div class="stat-label">正解の平均タイム</div></div>`:'',
+    fastest?`<div class="stat-card"><div class="stat-number">${fastest.time.toFixed(2)}<small>秒</small></div><div class="stat-label">最速：${escHtml((fastest.answer||'').split(' / ')[0])}</div></div>`:'',
+    quiz.bestStreak>=2?`<div class="stat-card"><div class="stat-number">${quiz.bestStreak}</div><div class="stat-label">最大連続正解</div></div>`:''
+  ].join('');
+  document.getElementById('result-list').innerHTML=quiz.results.map(r=>`<div class="result-item"><span style="font-size:18px;">${r.correct?'✅':'❌'}</span>${r.videoId?`<img class="result-thumb" src="https://img.youtube.com/vi/${r.videoId}/mqdefault.jpg" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:''}<div style="flex:1; min-width:0;"><div style="font-weight:800;">${escHtml(r.answer||r.title)}</div><div style="color:var(--color-muted); font-size:12px; margin-top:2px;">あなたの答え：${escHtml(r.userInput)}</div></div>${r.correct&&r.time!=null?`<span class="sub-time">${r.time.toFixed(2)}秒</span>`:''}</div>`).join('');
   showPage('result');
   // 円グラフを0から伸ばす
   const ring=document.getElementById('result-ring'); let p=0; const target=pct*100;
