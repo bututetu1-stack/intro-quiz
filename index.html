@@ -3658,6 +3658,10 @@ function hostForcePass(id, idx, uuid){
   db.ref().update(updates);
 }
 // 曲が再生上限に達し誰も回答しなかった → 正解者なしで結果へ（ホスト）
+// 読み込みが遅れて再生している人も制限時間まで聴けるように、いちばん遅い人の再生位置が
+// 制限時間に届くまで締め切りを待つ（各端末が記録した再生開始時刻 pos から計算。ホストの曲が終わってから最大3秒）
+const HOST_END_WAIT_MAX_MS=3000;
+let hostEndKey=null, hostEndSince=0;
 function maybeHostTimeout(id, room){
   if(room.hostUuid!==getUser().uuid) return;
   const g=room.game; if(!g||g.phase!=='play') return;
@@ -3665,6 +3669,12 @@ function maybeHostTimeout(id, room){
   const round=(g.rounds&&g.rounds[idx])||{};
   if(round.answerer) return;                              // 回答中なら待つ
   if(round.buzzes && Object.keys(round.buzzes).length) return;   // 早押しの判定待ちなら待つ
+  const key=`${id}:${idx}:${round.cycle||0}`, now=serverNow();
+  if(hostEndKey!==key){ hostEndKey=key; hostEndSince=now; }
+  const me=getUser().uuid, limitMs=currentSongLimit()*1000, pos=round.pos||{};
+  let until=0;
+  Object.keys(room.players||{}).forEach(u=>{ if(u!==me && pos[u]!=null) until=Math.max(until, safeNum(pos[u])+limitMs); });
+  if(now<Math.min(until, hostEndSince+HOST_END_WAIT_MAX_MS)) return;   // まだ聴いている人がいる
   if(matchTimerInt){ clearInterval(matchTimerInt); matchTimerInt=null; } // 多重発火防止
   hostReveal(id, room, null);
 }
