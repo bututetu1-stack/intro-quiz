@@ -884,6 +884,12 @@
         </div>
       </div>
       <div class="form-group">
+        <label class="form-label">回答時間（早押ししてから答えるまで）</label>
+        <select class="form-select" id="set-answer-limit">
+          <option value="10">10秒（4択向け）</option><option value="15">15秒</option><option value="20" selected>20秒</option><option value="30">30秒</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label class="form-label">4択モード（曲名を入力せず、4つから選ぶ）</label>
         <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleChoiceMode()">
           <div class="toggle-track" id="choice-track"><div class="toggle-knob"></div></div>
@@ -2618,6 +2624,7 @@ function settingsSummaryHtml(s){
     `<span class="pill">🎵 ${escHtml(names.join('・'))}</span>`,
     `<span class="pill">${count>0?count+'問':'全曲'}</span>`,
     `<span class="pill">⏱ ${safeNum(s.songLimit,30)||30}秒</span>`,
+    `<span class="pill">⌨️ 回答${answerLimitMs({ settings:s })/1000}秒</span>`,
     `<span class="pill">${s.suggestOn===false?'回答候補なし':'回答候補あり'}</span>`,
     choice,
     s.chorusOn?'<span class="pill">サビ再生</span>':'',
@@ -2687,6 +2694,7 @@ function populateHostSettings(s){
   document.getElementById('set-correct-pts').value = s.correctPts ?? 1;
   document.getElementById('set-wrong-pts').value = s.wrongPts ?? 0;
   document.getElementById('set-song-limit').value = String(s.songLimit ?? 30);
+  document.getElementById('set-answer-limit').value = String(s.answerLimit ?? 20);
   setSuggest(s.suggestOn ?? true);
   setAutoNext(!!s.autoNext);
   setChoiceMode(!!s.choiceMode);
@@ -2780,6 +2788,7 @@ function saveRoomSettings(){
     correctPts:parseInt(document.getElementById('set-correct-pts').value,10)||1,
     wrongPts:parseInt(document.getElementById('set-wrong-pts').value,10)||0,
     songLimit:parseInt(document.getElementById('set-song-limit').value,10)||30,
+    answerLimit:parseInt(document.getElementById('set-answer-limit').value,10)||20,
     autoNext:autoNextOn,
     choiceMode:choiceModeOn,
     suggestOn
@@ -2945,7 +2954,8 @@ let matchStarted=false, matchEnded=false; // 現問題の再生状態
 let answererTimer=null;              // ホストの回答制限時間（回答者が落ちた時の保険）
 let buzzCountdownInt=null;           // ロックアウトのカウントダウン表示
 const WRONG_LOCK_MS=5000;            // 誤答ペナルティ
-const ANSWER_LIMIT_MS=20000;         // 回答制限時間
+const ANSWER_LIMIT_MS=20000;         // 回答制限時間（部屋の設定 answerLimit がなければこれ）
+function answerLimitMs(room){ const v=parseInt(room&&room.settings&&room.settings.answerLimit,10); return (v>=5 && v<=120)?v*1000:ANSWER_LIMIT_MS; }
 const BUZZ_MARGIN_MS=250;           // 早押しの判定：通信の遅れを見込んで待つ時間
 const BUZZ_MAX_WAIT_MS=1500;        // 早押しの判定：最初の早押しから最大でこれだけ待つ
 const ANSWER_GRACE_MS=2500;          // 回答者本人の時間切れ確定を待つ猶予（ホストの保険用）
@@ -3436,7 +3446,7 @@ function renderMatch(id, room){
 
   // 回答中（誰かに回答権あり）なら回答用の残り時間バーを表示
   if(answerer && round.answerStartAt){
-    const total=ANSWER_LIMIT_MS/1000;
+    const total=answerLimitMs(room)/1000;
     const tick=()=>{
       const remain=total-(serverNow()-round.answerStartAt)/1000;
       setTimeBar(remain, total, '⌨️ 回答');
@@ -3677,7 +3687,7 @@ function maybeHostWatchAnswerer(id, room){
   if(answererTimer){ clearTimeout(answererTimer); answererTimer=null; }
   if(!key) return;
   const startAt=round.answerStartAt||serverNow();
-  const wait=Math.max(0, startAt+ANSWER_LIMIT_MS+ANSWER_GRACE_MS-serverNow());
+  const wait=Math.max(0, startAt+answerLimitMs(room)+ANSWER_GRACE_MS-serverNow());
   const uuid=round.answerer;
   answererTimer=setTimeout(()=>hostForcePass(id, idx, uuid), wait);
 }
