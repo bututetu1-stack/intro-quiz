@@ -326,6 +326,89 @@
   .song-log-num { font-family:var(--font-display); font-size:20px; color:var(--color-accent); width:32px; text-align:center; flex-shrink:0; }
   .song-log-title { flex:1; font-weight:700; }
   .song-log-winner { font-size:12px; color:var(--color-correct); }
+
+  /* ===== 演出・新UI ===== */
+  body { background:
+    radial-gradient(ellipse 60% 40% at 12% 0%, rgba(232,255,71,0.07), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 100% 100%, rgba(71,182,255,0.08), transparent 70%),
+    var(--color-bg); background-attachment:fixed; }
+  .nav { background:rgba(13,13,15,0.85); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+  .sfx-btn { background:none; border:1px solid var(--color-border); color:var(--color-text); width:36px; height:34px; border-radius:var(--radius); cursor:pointer; font-size:15px; transition:var(--transition); }
+  .sfx-btn:hover { border-color:var(--color-accent); }
+  .home-modes { display:grid; grid-template-columns:1fr 1fr; gap:14px; max-width:620px; margin:0 auto; text-align:left; }
+  .mode-card { background:var(--color-surface); border:1px solid var(--color-border); border-radius:16px; padding:22px; cursor:pointer; transition:var(--transition); position:relative; overflow:hidden; }
+  .mode-card::after { content:''; position:absolute; inset:auto -40px -60px auto; width:140px; height:140px; border-radius:50%; background:var(--mode-color); opacity:0.12; transition:var(--transition); }
+  .mode-card:hover { transform:translateY(-4px); border-color:var(--mode-color); box-shadow:0 12px 32px rgba(0,0,0,0.4); }
+  .mode-card:hover::after { opacity:0.22; transform:scale(1.15); }
+  .mode-card.mp { --mode-color:var(--color-accent2); }
+  .mode-card.solo { --mode-color:var(--color-accent); }
+  .mode-icon { font-size:34px; margin-bottom:10px; }
+  .mode-name { font-size:19px; font-weight:900; color:var(--mode-color); margin-bottom:6px; }
+  .mode-desc { font-size:12px; color:var(--color-muted); line-height:1.6; }
+  @media(max-width:560px){ .home-modes { grid-template-columns:1fr; } }
+
+  .audio-wave span { box-shadow:0 0 12px rgba(232,255,71,0.45); }
+  .audio-cover.answering .audio-wave span { background:var(--color-accent2); box-shadow:0 0 12px rgba(71,182,255,0.5); }
+  .reveal-correct { animation:popIn .45s cubic-bezier(.2,1.4,.4,1); }
+  @keyframes popIn { from{ opacity:0; transform:scale(.88); } to{ opacity:1; transform:scale(1); } }
+
+  /* 回答権フラッシュ */
+  .buzz-flash { position:fixed; inset:0; z-index:900; display:none; align-items:center; justify-content:center; pointer-events:none; background:radial-gradient(circle, rgba(71,182,255,0.35), rgba(13,13,15,0.75) 70%); }
+  .buzz-flash.show { display:flex; animation:flashOut 1.1s ease forwards; }
+  .buzz-flash-inner { text-align:center; animation:flashIn .35s cubic-bezier(.2,1.5,.4,1); }
+  .buzz-flash-bell { font-size:64px; }
+  .buzz-flash-name { font-size:clamp(28px,7vw,54px); font-weight:900; color:#fff; text-shadow:0 0 24px rgba(71,182,255,0.9); }
+  @keyframes flashIn { from{ transform:scale(.4); opacity:0; } to{ transform:scale(1); opacity:1; } }
+  @keyframes flashOut { 0%,70%{ opacity:1; } 100%{ opacity:0; } }
+
+  .shake { animation:shake .45s ease; }
+  @keyframes shake { 0%,100%{transform:translateX(0);} 20%{transform:translateX(-10px);} 40%{transform:translateX(9px);} 60%{transform:translateX(-6px);} 80%{transform:translateX(4px);} }
+  .score-chip.bump { animation:bump .6s cubic-bezier(.2,1.6,.4,1); }
+  .score-chip.drop { animation:drop .6s ease; }
+  @keyframes bump { 0%{transform:scale(1);} 40%{transform:scale(1.22); border-color:var(--color-correct); box-shadow:0 0 16px rgba(71,255,178,0.5);} 100%{transform:scale(1);} }
+  @keyframes drop { 0%,100%{ background:var(--color-surface); } 40%{ background:rgba(255,71,71,0.35); } }
+
+  /* 招待リンク */
+  .invite-btn { margin-top:12px; }
+
+  /* 表彰台・称号 */
+  .podium { display:flex; align-items:flex-end; justify-content:center; gap:10px; margin:10px 0 24px; }
+  .podium-col { display:flex; flex-direction:column; align-items:center; width:110px; animation:popIn .6s cubic-bezier(.2,1.4,.4,1) both; }
+  .podium-col.p1 { animation-delay:.35s; } .podium-col.p2 { animation-delay:.15s; } .podium-col.p3 { animation-delay:0s; }
+  .podium-avatar { width:52px; height:52px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:20px; color:#000; margin-bottom:6px; }
+  .podium-col.p1 .podium-avatar { width:64px; height:64px; font-size:24px; box-shadow:0 0 0 3px var(--color-accent), 0 0 24px rgba(232,255,71,0.5); }
+  .podium-name { font-size:13px; font-weight:700; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .podium-score { font-family:var(--font-display); font-size:22px; color:var(--color-accent); }
+  .podium-base { width:100%; border-radius:10px 10px 0 0; display:flex; align-items:flex-start; justify-content:center; padding-top:8px; font-family:var(--font-display); font-size:30px; color:#000; }
+  .podium-col.p1 .podium-base { height:110px; background:linear-gradient(180deg,#f5ff8a,var(--color-accent)); }
+  .podium-col.p2 .podium-base { height:80px; background:linear-gradient(180deg,#e8e8f0,#a9a9b8); }
+  .podium-col.p3 .podium-base { height:58px; background:linear-gradient(180deg,#f0b88a,#c47a42); }
+  .awards { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; margin-bottom:24px; }
+  .award { background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius); padding:14px; text-align:center; }
+  .award-icon { font-size:26px; }
+  .award-title { font-size:11px; color:var(--color-muted); letter-spacing:1px; margin:4px 0; }
+  .award-name { font-weight:900; font-size:15px; }
+  .award-val { font-size:12px; color:var(--color-accent2); margin-top:2px; }
+
+  .confetti-canvas { position:fixed; inset:0; width:100%; height:100%; pointer-events:none; z-index:950; }
+
+  /* スマホ：ナビは1行目にロゴ＋アイコン類、2行目にタブ */
+  @media (max-width:560px){
+    .nav-right { display:contents; }
+    .conn-dot { margin-left:auto; }
+    .nav-links { order:5; width:100%; flex:none; }
+    .nav-btn { white-space:nowrap; padding:8px 4px; }
+    .nav-uuid { display:none; }
+    .sfx-btn { width:32px; height:32px; font-size:13px; }
+  }
+  /* スマホ：早押しボタンを下部に固定した大きな丸ボタンに */
+  @media (max-width:560px){
+    #page-match.active .match-play-pad { padding-bottom:150px; }
+    #match-buzz-btn { position:fixed; left:50%; bottom:max(18px, env(safe-area-inset-bottom)); transform:translateX(-50%); width:124px; height:124px; padding:0; border-radius:50%; font-size:17px; letter-spacing:1px; z-index:200; box-shadow:0 10px 30px rgba(71,182,255,0.45), inset 0 -6px 0 rgba(0,0,0,0.2); line-height:1.3; }
+    #match-buzz-btn:hover { transform:translateX(-50%); }
+    #match-buzz-btn:active { transform:translateX(-50%) scale(0.94); }
+    #match-buzz-btn:disabled { transform:translateX(-50%); }
+  }
 </style>
 </head>
 <body>
@@ -342,6 +425,7 @@
   <div class="nav-logo">INTRO QUIZ</div>
   <div class="nav-right">
     <div class="conn-dot" id="conn-dot" title="接続状態"></div>
+    <button class="sfx-btn" id="sfx-btn" onclick="toggleSfx()" title="効果音のON/OFF">🔊</button>
     <div class="nav-links">
       <button class="nav-btn active-nav" data-page="home" onclick="showPage('home')">🏠 ホーム</button>
       <button class="nav-btn" data-page="rooms" onclick="showPage('rooms')">🎮 対戦</button>
@@ -365,9 +449,17 @@
       <div class="stat-card"><div class="stat-number" id="stat-songs">0</div><div class="stat-label">総曲数</div></div>
       <div class="stat-card"><div class="stat-number" id="stat-rooms">0</div><div class="stat-label">公開部屋</div></div>
     </div>
-    <div class="home-cta">
-      <button class="btn-primary btn-blue" onclick="showPage('rooms')">🎮 オンライン対戦</button>
-      <button class="btn-sub" onclick="showPage('setup')">ソロでプレイ</button>
+    <div class="home-modes">
+      <div class="mode-card mp" onclick="showPage('rooms')">
+        <div class="mode-icon">👥</div>
+        <div class="mode-name">みんなで対戦</div>
+        <div class="mode-desc">部屋を建てて友達と早押しバトル。招待リンクを送るだけで参加できます。</div>
+      </div>
+      <div class="mode-card solo" onclick="showPage('setup')">
+        <div class="mode-icon">🎧</div>
+        <div class="mode-name">ひとりで練習</div>
+        <div class="mode-desc">好きな曲リストでイントロ当てに挑戦。自分のペースで遊べます。</div>
+      </div>
     </div>
   </div>
 </div>
@@ -416,6 +508,7 @@
           <button class="btn-sub" onclick="copyCode()" style="padding:8px 14px; font-size:12px;">コピー</button>
         </div>
         <div class="form-hint" id="lobby-code-hint" style="margin-top:8px;">この部屋は非公開です。上の合言葉を知っている人だけが参加できます。</div>
+        <button class="btn-blue btn-primary invite-btn" style="width:100%; padding:12px; font-size:14px;" onclick="copyInviteLink()">🔗 招待リンクをコピー（開くだけで参加）</button>
       </div>
       <div class="form-hint" id="lobby-public-hint" style="display:none;">🌐 この部屋は公開中です。合言葉は不要で、「対戦」一覧から誰でも参加できます。</div>
     </div>
@@ -457,6 +550,23 @@
           </select>
         </div>
       </div>
+      <div class="row2">
+        <div class="form-group">
+          <label class="form-label">1問の再生時間</label>
+          <select class="form-select" id="set-song-limit">
+            <option value="10">10秒（上級）</option><option value="15">15秒</option><option value="20">20秒</option>
+            <option value="30" selected>30秒</option><option value="45">45秒</option><option value="60">60秒</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">回答候補を表示</label>
+          <div class="toggle-switch" onclick="toggleSuggest()">
+            <div class="toggle-track" id="suggest-track"><div class="toggle-knob"></div></div>
+            <span style="font-size:13px;" id="suggest-label">OFF</span>
+          </div>
+          <div class="form-hint">入力中に曲名の候補を表示（スマホで入力がラクに）</div>
+        </div>
+      </div>
 
       <div class="form-group">
         <label class="form-label">ハンデ戦</label>
@@ -476,7 +586,7 @@
             <input class="form-input" id="hc-other-hit" type="number" value="2">
           </div>
         </div>
-        <div class="form-hint" style="margin-top:8px;">通常の正解は +1 点。上記はハンデ補正です。（Phase4で対戦に反映）</div>
+        <div class="form-hint" style="margin-top:8px;">追加していない人の正解は上記の点数、追加者が外すと上記の点数が加算されます。</div>
       </div>
 
       <div class="form-group">
@@ -485,7 +595,7 @@
           <div class="toggle-track" id="chorus-track"><div class="toggle-knob"></div></div>
           <span style="font-size:13px;" id="chorus-label">OFF</span>
         </div>
-        <div class="form-hint">ONにするとサビを自動再生。曲ごとに「サビ開始時間（秒）」の設定が必要です。</div>
+        <div class="form-hint">ONにするとサビ（よく再生される部分）を自動検出して再生。曲ごとに開始秒を手動指定することもできます。</div>
       </div>
       <div class="row2">
         <div class="form-group">
@@ -523,7 +633,7 @@
     <div class="match-scores" id="match-scores"></div>
 
     <!-- 出題中 -->
-    <div id="match-play-view">
+    <div id="match-play-view" class="match-play-pad">
       <div id="match-timebar" style="display:none;">
         <div class="time-bar-label" id="match-timebar-label">残り時間</div>
         <div class="time-bar-wrap"><div class="time-bar-fill" id="match-timebar-fill"></div></div>
@@ -548,7 +658,8 @@
       <div id="match-answer-wrap" style="display:none; margin-top:16px;">
         <div class="answer-label" id="match-buzz-elapsed" style="color:var(--color-accent);"></div>
         <div class="answer-input-wrap">
-          <input class="answer-input" id="match-answer-input" type="text" placeholder="曲名を入力..." onkeydown="if(event.key==='Enter') submitMatchAnswer()">
+          <input class="answer-input" id="match-answer-input" type="text" placeholder="曲名を入力..." autocomplete="off" onkeydown="if(event.key==='Enter') submitMatchAnswer()">
+          <datalist id="match-choices"></datalist>
           <button class="submit-btn" onclick="submitMatchAnswer()">回答</button>
         </div>
         <button class="btn-sub" style="width:100%; margin-top:10px;" onclick="passMatch()">わからない（パス）</button>
@@ -577,6 +688,8 @@
     <!-- 最終結果 -->
     <div id="match-finished-view" style="display:none;">
       <div class="result-label" style="text-align:center;">FINAL RESULT</div>
+      <div class="podium" id="finished-podium"></div>
+      <div class="awards" id="finished-awards"></div>
       <div class="stand-list" id="finished-standings" style="margin-top:16px;"></div>
       <div style="font-size:13px; color:var(--color-muted); margin:20px 0 8px;">📋 出題曲一覧</div>
       <div class="sub-list" id="match-song-log" style="margin-bottom:20px;"></div>
@@ -633,7 +746,8 @@
     <div class="answer-area" id="solo-answer-area" style="display:none;">
       <div class="answer-label" id="solo-buzz-time" style="color:var(--color-accent);">曲名を入力（よみがな・別表記もOK）</div>
       <div class="answer-input-wrap">
-        <input class="answer-input" id="answer-input" type="text" placeholder="曲名を入力..." onkeydown="if(event.key==='Enter') submitAnswer()">
+        <input class="answer-input" id="answer-input" type="text" placeholder="曲名を入力..." autocomplete="off" list="solo-choices" onkeydown="if(event.key==='Enter') submitAnswer()">
+        <datalist id="solo-choices"></datalist>
         <button class="submit-btn" id="submit-btn" onclick="submitAnswer()">判定</button>
       </div>
     </div>
@@ -841,6 +955,8 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<!-- 回答権フラッシュ -->
+<div class="buzz-flash" id="buzz-flash"><div class="buzz-flash-inner"><div class="buzz-flash-bell">🔔</div><div class="buzz-flash-name" id="buzz-flash-name"></div></div></div>
 
 <script>
 // ============================================================
@@ -867,7 +983,7 @@ const YT_API_KEY = "AIzaSyB7OK_8ozVW29QRW7UdfE2IJ86E5yV22B4";
 // グローバル状態
 // ============================================================
 const STATE = { lists: [], rooms: [], users: [], user: null, currentRoomId: null };
-const LS = { user: 'iq_user', migrated: 'iq_migrated_v3' };
+const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx' };
 
 function lsGet(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } }
 function lsSet(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
@@ -938,6 +1054,7 @@ function saveProfile(){
   const u = getUser(); u.name = name; lsSet(LS.user, u); STATE.user = u;
   db.ref('users/'+u.uuid).update({ name, uuid: u.uuid }); // 統計用に登録
   renderProfileBadge(); closeModal('profile-modal'); showToast('プロフィールを保存しました','success');
+  if(pendingInviteRoomId){ const rid=pendingInviteRoomId; pendingInviteRoomId=null; if(STATE.rooms.find(r=>r.id===rid)) joinRoom(rid); }
 }
 
 // ============================================================
@@ -1192,11 +1309,14 @@ function createRoom(){
   db.ref('rooms/'+id).set(room).then(()=>{ closeModal('room-modal'); enterLobby(id); showToast('部屋を作成しました','success'); });
 }
 
+function findRoomByCode(code){
+  const lc=String(code||'').trim().toLowerCase(); if(!lc) return null;
+  return STATE.rooms.find(r => (r.code&&r.code.toLowerCase()===lc) || (r.passphrase&&r.passphrase.toLowerCase()===lc)) || null;
+}
 function joinByCode(){
   const code=document.getElementById('join-code').value.trim();
   if(!code){ showToast('合言葉/コードを入力してください','error'); return; }
-  const lc=code.toLowerCase();
-  const room=STATE.rooms.find(r => (r.code&&r.code.toLowerCase()===lc) || (r.passphrase&&r.passphrase.toLowerCase()===lc));
+  const room=findRoomByCode(code);
   if(!room){ showToast('該当する部屋が見つかりません','error'); return; }
   if(room.status!=='lobby'){ showToast('この部屋は対戦中です','error'); return; }
   joinRoom(room.id);
@@ -1208,10 +1328,45 @@ function joinRoom(id){
   db.ref(`rooms/${id}/players/${u.uuid}`).set({ uuid:u.uuid, name:u.name, joinedAt:Date.now() })
     .then(()=>{ document.getElementById('join-code').value=''; enterLobby(id); });
 }
+// 招待リンク（?room=コード）。非公開部屋は合言葉を使う
+function copyInviteLink(){
+  const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
+  const key=(room.visibility==='private' && room.passphrase) ? room.passphrase : room.code;
+  const url=location.origin+location.pathname+'?room='+encodeURIComponent(key);
+  const done=()=>showToast('招待リンクをコピーしました','success');
+  if(navigator.share && /Mobi|Android|iPhone/i.test(navigator.userAgent)){
+    navigator.share({ title:'イントロクイズ', text:`「${room.name}」で一緒に遊ぼう！`, url }).catch(()=>{});
+  } else if(navigator.clipboard){ navigator.clipboard.writeText(url).then(done).catch(()=>prompt('このリンクを共有してください', url)); }
+  else prompt('このリンクを共有してください', url);
+}
+// 起動時：招待リンクからの自動入室 → リロード前にいた部屋への復帰
+let startupJoinDone=false;
+function handleStartupJoin(){
+  if(startupJoinDone) return; startupJoinDone=true;
+  const u=getUser();
+  const params=new URLSearchParams(location.search);
+  const code=params.get('room');
+  if(code){
+    history.replaceState(null,'',location.pathname);
+    const room=findRoomByCode(code);
+    if(!room){ showToast('招待された部屋が見つかりません（解散済みの可能性）','error'); return; }
+    if(!u.name){ pendingInviteRoomId=room.id; showToast('表示名を設定すると部屋に参加します'); openProfileModal(); return; }
+    if(room.status!=='lobby' && !(room.players&&room.players[u.uuid])){ showToast('この部屋は対戦中です。終了後に参加できます','error'); return; }
+    joinRoom(room.id); return;
+  }
+  const savedId=lsGet(LS.room, null);
+  if(savedId){
+    const room=STATE.rooms.find(r=>r.id===savedId);
+    if(room && u.name){ joinRoom(room.id); showToast('前回の部屋に復帰しました','success'); }
+    else lsSet(LS.room, null);
+  }
+}
+let pendingInviteRoomId=null;
 
 let lobbyRef=null;
 function enterLobby(id){
   STATE.currentRoomId=id;
+  lsSet(LS.room, id);
   const u=getUser();
   // 退出時の自動クリーンアップ
   const isHost = STATE.rooms.find(r=>r.id===id)?.hostUuid===u.uuid;
@@ -1255,7 +1410,12 @@ function renderLobby(id, room){
   if(isHost) populateHostSettings(room.settings||{});
 }
 
+let lastPopulatedKey='';
 function populateHostSettings(s){
+  // 参加者の出入りなどで再描画されても、編集中の設定を上書きしない
+  const key=STATE.currentRoomId+'|'+JSON.stringify(s)+'|'+visibleLists().map(l=>l.id+':'+(l.songs||[]).length).join(',');
+  if(key===lastPopulatedKey) return;
+  lastPopulatedKey=key;
   const sel=document.getElementById('set-list');
   const lists=visibleLists().filter(l=>(l.songs||[]).length>0);
   const savedIds=new Set(Array.isArray(s.listIds)?s.listIds:(s.listId?[s.listId]:[]));
@@ -1269,7 +1429,26 @@ function populateHostSettings(s){
   setChorus(!!s.chorusOn);
   document.getElementById('set-correct-pts').value = s.correctPts ?? 1;
   document.getElementById('set-wrong-pts').value = s.wrongPts ?? 0;
+  document.getElementById('set-song-limit').value = String(s.songLimit ?? 30);
+  setSuggest(s.suggestOn ?? true);
   populateYaminabeGenre(s.yaminabeGenre||'');
+}
+let suggestOn=true;
+function setSuggest(on){
+  suggestOn=on;
+  document.getElementById('suggest-track').classList.toggle('on',on);
+  document.getElementById('suggest-label').textContent=on?'ON':'OFF';
+}
+function toggleSuggest(){ setSuggest(!suggestOn); }
+// 回答候補（出題プール全体の曲名。重複除去・シャッフル）
+function buildChoices(pool){
+  const seen=new Set(); const out=[];
+  pool.forEach(s=>{ const a=(s.answers||[])[0]; if(a && !seen.has(a)){ seen.add(a); out.push(a); } });
+  return out.sort(()=>Math.random()-0.5).slice(0,400);
+}
+function fillDatalist(id, choices){
+  const dl=document.getElementById(id); if(!dl) return;
+  dl.innerHTML=(choices||[]).map(c=>`<option value="${escAttr(c)}"></option>`).join('');
 }
 let yaminabeOn=false;
 function setYaminabe(on){
@@ -1329,9 +1508,11 @@ function saveRoomSettings(){
     hcOtherHit:parseInt(document.getElementById('hc-other-hit').value,10)||0,
     chorusOn,
     correctPts:parseInt(document.getElementById('set-correct-pts').value,10)||1,
-    wrongPts:parseInt(document.getElementById('set-wrong-pts').value,10)||0
+    wrongPts:parseInt(document.getElementById('set-wrong-pts').value,10)||0,
+    songLimit:parseInt(document.getElementById('set-song-limit').value,10)||30,
+    suggestOn
   };
-  db.ref(`rooms/${id}/settings`).set(settings).then(()=>showToast('設定を保存しました','success'));
+  return db.ref(`rooms/${id}/settings`).set(settings).then(()=>showToast('設定を保存しました','success'));
 }
 function hostStartMatch(){
   const id=STATE.currentRoomId; if(!id) return;
@@ -1351,6 +1532,7 @@ function hostStartMatch(){
   }
   pool=pool.filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）');
   if(pool.length<1){ showToast('出題できる曲がありません（正解未設定は除外）','error'); return; }
+  const choices=buildChoices(pool);
   pool=[...pool].sort(()=>Math.random()-0.5);
   let count=parseInt(document.getElementById('set-count').value,10)||0;
   if(count>0) pool=pool.slice(0,count);
@@ -1360,10 +1542,107 @@ function hostStartMatch(){
     chorusStart: (s.chorusStart!=null && s.chorusStart!=='') ? Number(s.chorusStart) : null
   }));
   const scores={}; Object.keys(room.players||{}).forEach(u=>scores[u]=0);
-  const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:yaminabeOn };
+  const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:yaminabeOn, choices };
   matchLocal={ idx:-1, buzzSent:false, answered:false, myTurn:false, elapsed:null, chorusPlayed:false };
   db.ref('rooms/'+id).update({ status:'playing', game }).then(()=>showToast(yaminabeOn?'闇鍋スタート！':'対戦開始！','success'));
 }
+
+// ============================================================
+// 演出：効果音（Web Audio で合成）・紙吹雪・フラッシュ
+// ============================================================
+const SFX=(()=>{
+  let ctx=null;
+  let on=lsGet(LS.sfx, true)!==false;
+  function ac(){
+    if(!ctx){ const C=window.AudioContext||window.webkitAudioContext; if(!C) return null; try{ ctx=new C(); }catch(e){ return null; } }
+    if(ctx.state==='suspended') ctx.resume().catch(()=>{});
+    return ctx;
+  }
+  function tone(freq, start, dur, opt={}){
+    if(!on) return; const c=ac(); if(!c) return;
+    const { type='sine', vol=0.2, slide=null }=opt;
+    const t=c.currentTime+start;
+    const o=c.createOscillator(), g=c.createGain();
+    o.type=type; o.frequency.setValueAtTime(freq,t);
+    if(slide) o.frequency.exponentialRampToValueAtTime(slide,t+dur);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(vol,t+0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(c.destination); o.start(t); o.stop(t+dur+0.05);
+  }
+  return {
+    unlock(){ ac(); },
+    isOn(){ return on; },
+    setOn(v){ on=!!v; lsSet(LS.sfx, on); },
+    buzz(){ tone(1319,0,0.16,{type:'square',vol:0.1}); tone(1047,0.15,0.4,{type:'square',vol:0.1}); },          // ピンポン
+    correct(){ [523,659,784,1047].forEach((f,i)=>tone(f,i*0.08,0.35,{type:'triangle',vol:0.22})); tone(1568,0.32,0.5,{type:'sine',vol:0.12}); },
+    wrong(){ tone(185,0,0.5,{type:'sawtooth',vol:0.12}); tone(175,0,0.5,{type:'square',vol:0.07}); },             // ブブー
+    tick(){ tone(988,0,0.07,{type:'sine',vol:0.1}); },
+    fanfare(){
+      [[392,0,0.12],[392,0.13,0.12],[392,0.26,0.12],[523,0.4,0.6],[659,0.62,0.3],[784,0.8,0.8]]
+        .forEach(([f,s,d])=>{ tone(f,s,d,{type:'square',vol:0.08}); tone(f/2,s,d,{type:'triangle',vol:0.1}); });
+    }
+  };
+})();
+function updateSfxBtn(){ const b=document.getElementById('sfx-btn'); if(b){ b.textContent=SFX.isOn()?'🔊':'🔇'; b.title=SFX.isOn()?'効果音：ON':'効果音：OFF'; } }
+function toggleSfx(){ SFX.setOn(!SFX.isOn()); updateSfxBtn(); if(SFX.isOn()) SFX.tick(); }
+// iOS等は最初のタップまで音を出せないので、最初の操作で解禁
+document.addEventListener('pointerdown', ()=>SFX.unlock(), { once:true });
+
+const REDUCED_MOTION = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+function confetti(duration=2400){
+  if(REDUCED_MOTION) return;
+  const cv=document.createElement('canvas'); cv.className='confetti-canvas'; document.body.appendChild(cv);
+  const dpr=window.devicePixelRatio||1, W=innerWidth, H=innerHeight;
+  cv.width=W*dpr; cv.height=H*dpr;
+  const c=cv.getContext('2d'); c.scale(dpr,dpr);
+  const colors=['#e8ff47','#47b6ff','#47ffb2','#ff5fa2','#ffae47'];
+  const ps=Array.from({length:150},()=>({
+    x:W/2+(Math.random()-0.5)*W*0.4, y:H*0.4,
+    vx:(Math.random()-0.5)*15, vy:-Math.random()*15-5,
+    r:Math.random()*Math.PI, vr:(Math.random()-0.5)*0.35,
+    w:6+Math.random()*6, h:8+Math.random()*9, col:colors[Math.random()*colors.length|0]
+  }));
+  const t0=performance.now();
+  (function frame(now){
+    const el=now-t0; c.clearRect(0,0,W,H);
+    c.globalAlpha=Math.max(0, 1-Math.max(0,el-duration*0.6)/(duration*0.4));
+    ps.forEach(p=>{
+      p.vy+=0.38; p.vx*=0.99; p.x+=p.vx; p.y+=p.vy; p.r+=p.vr;
+      c.save(); c.translate(p.x,p.y); c.rotate(p.r); c.fillStyle=p.col; c.fillRect(-p.w/2,-p.h/2,p.w,p.h); c.restore();
+    });
+    if(el<duration) requestAnimationFrame(frame); else cv.remove();
+  })(t0);
+}
+let buzzFlashTimer=null;
+function showBuzzFlash(text){
+  const el=document.getElementById('buzz-flash');
+  document.getElementById('buzz-flash-name').textContent=text;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  clearTimeout(buzzFlashTimer); buzzFlashTimer=setTimeout(()=>el.classList.remove('show'), 1150);
+}
+function shakeEl(id){
+  if(REDUCED_MOTION) return;
+  const el=document.getElementById(id); if(!el) return;
+  el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+}
+function vibrate(ms){ try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){} }
+
+// 1問ごとの演出状態（新しい回答権・誤答・結果発表を検知して1回だけ鳴らす）
+let fxState={ key:'', answerer:null, attempts:0, revealed:false };
+function fxKeyOf(room){ const g=room.game||{}; const q=(g.questions||[])[g.current]; return room.id+':'+g.current+':'+(q?q.videoId:''); }
+function fxSync(room){ const k=fxKeyOf(room); if(fxState.key!==k) fxState={ key:k, answerer:null, attempts:0, revealed:false }; }
+
+// PC：スペースキーで早押し
+document.addEventListener('keydown', e=>{
+  if(e.code!=='Space' && e.key!==' ') return;
+  if(!document.getElementById('page-match').classList.contains('active')) return;
+  const tag=(document.activeElement&&document.activeElement.tagName)||'';
+  if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return;
+  const b=document.getElementById('match-buzz-btn');
+  if(b.style.display==='none' || b.disabled) return;
+  e.preventDefault(); buzz();
+});
 
 // ============================================================
 // 対戦：YouTube IFrame API
@@ -1422,7 +1701,7 @@ function matchCurrentTime(){
 }
 // 問題の動画を準備。解禁済みなら自動再生、未解禁なら解禁オーバーレイを出す
 function loadMatchVideo(videoId){
-  matchPlaying=false; matchSongStart=null; matchStarted=false; matchEnded=false; pendingVideoId=videoId;
+  matchPlaying=false; matchSongStart=null; matchStarted=false; matchEnded=false; pendingVideoId=videoId; lastTickSec=null;
   if(matchStopTimer){ clearTimeout(matchStopTimer); matchStopTimer=null; }
   if(matchTimerInt){ clearInterval(matchTimerInt); matchTimerInt=null; }
   if(matchWatchdog) clearTimeout(matchWatchdog);
@@ -1447,6 +1726,7 @@ function autoPlayMatch(){
 // 各プレイヤー1回の音声解禁ジェスチャ
 function unlockMatchAudio(){
   matchAudioUnlocked=true;
+  SFX.unlock();
   document.getElementById('match-unlock').style.display='none';
   ensureMatchPlayer(()=>{ try{ matchPlayer.playVideo(); }catch(e){} });
   autoPlayMatch();
@@ -1476,13 +1756,26 @@ function setTimeBar(remain, total, label){
 }
 function clearAnswerBar(){ if(answerBarInt){ clearInterval(answerBarInt); answerBarInt=null; } }
 // 再生位置の監視（経過表示＋30秒で停止＋ホストの時間切れ判定）
+// 1問の再生上限（ロビー設定 songLimit、未設定なら SONG_LIMIT）
+function currentSongLimit(){
+  const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId);
+  const v=room&&room.settings&&parseInt(room.settings.songLimit,10);
+  return (v&&v>0)?v:SONG_LIMIT;
+}
+let lastTickSec=null;
 function matchPlayTick(){
   const t=matchCurrentTime();
+  const limit=currentSongLimit();
   if(!matchEnded && t>0){
     document.getElementById('match-elapsed').textContent=`経過: ${t.toFixed(2)} 秒`;
-    if(!answerBarInt) setTimeBar(SONG_LIMIT-t, SONG_LIMIT, '🎵 再生');
+    if(!answerBarInt){
+      setTimeBar(limit-t, limit, '🎵 再生');
+      // 残り5秒からカウント音
+      const remainSec=Math.ceil(limit-t);
+      if(matchPlaying && remainSec<=5 && remainSec>0 && remainSec!==lastTickSec){ lastTickSec=remainSec; SFX.tick(); }
+    }
   }
-  if(t>=SONG_LIMIT){
+  if(t>=limit){
     if(!matchEnded){
       matchEnded=true;
       try{ matchPlayer.pauseVideo(); }catch(e){}
@@ -1599,7 +1892,7 @@ async function fetchChorusStart(videoId){
 // ============================================================
 function renderRoomState(id, room){
   if(!room){
-    if(STATE.currentRoomId===id){ showToast('部屋が解散されました','error'); cleanupMatch(); STATE.currentRoomId=null; showPage('rooms'); }
+    if(STATE.currentRoomId===id){ showToast('部屋が解散されました','error'); cleanupMatch(); STATE.currentRoomId=null; lsSet(LS.room, null); showPage('rooms'); }
     return;
   }
   if(room.status==='lobby'){
@@ -1641,8 +1934,30 @@ function renderMatch(id, room){
   const lockUntil=(round.lockouts&&round.lockouts[me])||0;
   const now=Date.now();
 
+  // 回答候補（1回だけ生成）
+  const ansInput=document.getElementById('match-answer-input');
+  if((room.settings||{}).suggestOn!==false && g.choices){
+    if(ansInput.dataset.choicesKey!==room.id+':'+g.choices.length){ fillDatalist('match-choices', g.choices); ansInput.dataset.choicesKey=room.id+':'+g.choices.length; }
+    ansInput.setAttribute('list','match-choices');
+  } else ansInput.removeAttribute('list');
+
+  // 演出：回答権の確定・誤答を検知
+  fxSync(room);
+  const attemptList=round.attempts?Object.values(round.attempts):[];
+  if(answerer && answerer!==fxState.answerer){
+    SFX.buzz();
+    showBuzzFlash(answerer===me?'あなたに回答権！':`${round.answererName||'?'} さん！`);
+    if(answerer===me) vibrate([60,40,60]);
+  }
+  if(attemptList.length>fxState.attempts){
+    const last=attemptList[attemptList.length-1];
+    if(last && !last.correct){ SFX.wrong(); shakeEl('match-play-view'); if(last.uuid===me) vibrate(200); }
+  }
+  fxState.answerer=answerer; fxState.attempts=attemptList.length;
+
   // 音声制御：誰かがバズ中 or 回答中なら一時停止、openなら再生
   const someoneActive = !!answerer || Object.keys(buzzes).length>0;
+  document.getElementById('match-audio-cover').classList.toggle('answering', someoneActive);
   if(matchStarted && !matchEnded){
     try{
       if(someoneActive){ if(matchPlaying) matchPlayer.pauseVideo(); }
@@ -1726,6 +2041,7 @@ function buzz(){
   if(!matchStarted){ showToast('再生開始までお待ちください','error'); return; }
   matchLocal.buzzSent=true;
   matchLocal.elapsed=matchCurrentTime();
+  vibrate(40);
   try{ matchPlayer.pauseVideo(); }catch(e){}
   document.getElementById('match-buzz-btn').style.display='none';
   db.ref(`rooms/${room.id}/game/buzzes/${idx}/${me}`).set({ name:getUser().name, elapsed:matchLocal.elapsed });
@@ -1924,6 +2240,14 @@ function renderReveal(id, room){
   if(rr.adderPenalty) winLine+=` ／ ${escHtml(rr.penalizedAdderName||'追加者')} は自分の曲を外して ${rr.adderPenalty} 点`;
   document.getElementById('reveal-winner').textContent=winLine;
 
+  // 演出：結果発表の瞬間に1回だけ
+  fxSync(room);
+  if(!fxState.revealed){
+    fxState.revealed=true;
+    if(rr.winnerUuid){ SFX.correct(); if(rr.winnerUuid===getUser().uuid){ confetti(); vibrate([50,50,120]); } }
+    else SFX.wrong();
+  }
+
   // 各回答（早押し順）
   const rows=attempts.sort((a,b)=>((a.elapsed==null?1e9:a.elapsed))-((b.elapsed==null?1e9:b.elapsed)));
   document.getElementById('reveal-subs').innerHTML = rows.length? rows.map(s=>`
@@ -1967,9 +2291,20 @@ function renderFinished(id, room){
   document.getElementById('match-progress').textContent='終了';
   renderScoreChips('match-scores', room, {});
   renderStandings('finished-standings', room, true);
+  renderPodium(room);
+  renderAwards(room);
+
+  // 演出：最終結果は1回だけファンファーレ（自分が1位なら紙吹雪）
+  const g=room.game;
+  const finKey=room.id+':'+(g&&g.questions?g.questions.map(q=>q.videoId).join(','):'');
+  if(finishFxKey!==finKey){
+    finishFxKey=finKey;
+    SFX.fanfare();
+    const top=sortedStandings(room)[0];
+    if(top && top.uuid===getUser().uuid && top.score>0) setTimeout(()=>confetti(3200), 500);
+  }
 
   // 曲一覧ログ
-  const g=room.game;
   const logEl=document.getElementById('match-song-log');
   if(logEl && g && g.questions){
     logEl.innerHTML=g.questions.map((q,i)=>{
@@ -2026,6 +2361,7 @@ function hostContinueMatch(excludePlayed){
   const excludeIds = excludePlayed ? new Set((prevGame.questions||[]).map(q=>q.videoId)) : null;
   let pool=buildPoolFromSettings(s, excludeIds);
   if(pool.length<1){ showToast(excludePlayed?'未出題の曲がもうありません':'出題できる曲がありません','error'); return; }
+  const choices=buildChoices(buildPoolFromSettings(s, null));
   pool=[...pool].sort(()=>Math.random()-0.5);
   const count=parseInt(s.count,10)||0;
   if(count>0) pool=pool.slice(0,count);
@@ -2035,23 +2371,74 @@ function hostContinueMatch(excludePlayed){
     chorusStart:(x.chorusStart!=null && x.chorusStart!=='')?Number(x.chorusStart):null
   }));
   const scores={}; Object.keys(room.players||{}).forEach(u=>scores[u]=(prevGame.scores&&prevGame.scores[u])||0); // 得点引継ぎ
-  const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:!!s.yaminabe };
+  const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:!!s.yaminabe, choices };
   matchLocal={ idx:-1, buzzSent:false, answered:false, myTurn:false, elapsed:null, chorusPlayed:false };
   db.ref('rooms/'+room.id).update({ status:'playing', game }).then(()=>showToast('対戦を続けます！','success'));
 }
 
 // スコアチップ（回答済みは薄く）
+// 得点の増減を検知してチップをアニメーション（再描画で途切れないよう、HTMLが同じなら書き換えない）
+let chipPrevScores={}, chipFx={};
 function renderScoreChips(elId, room, subsForRound){
   const me=getUser().uuid;
   const players=Object.values(room.players||{});
   const scores=room.game?.scores||{};
-  document.getElementById(elId).innerHTML=players.map(p=>{
+  const now=Date.now();
+  players.forEach(p=>{
+    const k=room.id+':'+p.uuid, cur=scores[p.uuid]||0, prev=chipPrevScores[k];
+    if(prev!=null && cur!==prev) chipFx[k]={ cls:cur>prev?'bump':'drop', until:now+700 };
+    chipPrevScores[k]=cur;
+  });
+  const html=players.map(p=>{
     const done=subsForRound && subsForRound[p.uuid];
-    return `<span class="score-chip ${p.uuid===me?'me':''} ${done?'done':''}">
+    const fx=chipFx[room.id+':'+p.uuid]; const fxCls=(fx&&fx.until>now)?fx.cls:'';
+    return `<span class="score-chip ${p.uuid===me?'me':''} ${done?'done':''} ${fxCls}">
       <span class="chip-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</span>
       <span>${escHtml(p.name||'?')}</span><span class="score-val">${scores[p.uuid]||0}</span>
     </span>`;
   }).join('');
+  const el=document.getElementById(elId);
+  if(el.dataset.html!==html){ el.innerHTML=html; el.dataset.html=html; }
+}
+
+function sortedStandings(room){
+  const scores=room.game?.scores||{};
+  return Object.values(room.players||{}).map(p=>({ uuid:p.uuid, name:p.name||'?', score:scores[p.uuid]||0 }))
+    .sort((a,b)=>b.score-a.score);
+}
+let finishFxKey='';
+// 表彰台（2位・1位・3位の順に並べる）
+function renderPodium(room){
+  const el=document.getElementById('finished-podium'); if(!el) return;
+  const top=sortedStandings(room).slice(0,3);
+  if(top.length<2){ el.innerHTML=''; el.style.display='none'; return; }
+  el.style.display='';
+  const order=[1,0,2].filter(i=>top[i]);
+  el.innerHTML=order.map(i=>{ const p=top[i]; return `
+    <div class="podium-col p${i+1}">
+      <div class="podium-avatar" style="background:${avatarColor(p.uuid)}">${escHtml(p.name.slice(0,1).toUpperCase())}</div>
+      <div class="podium-name">${i===0?'👑 ':''}${escHtml(p.name)}</div>
+      <div class="podium-score">${p.score} pt</div>
+      <div class="podium-base">${i+1}</div>
+    </div>`; }).join('');
+}
+// 称号（最速早押し・正解王・お手つき王）
+function renderAwards(room){
+  const el=document.getElementById('finished-awards'); if(!el) return;
+  const g=room.game||{};
+  const all=[]; Object.values(g.rounds||{}).forEach(r=>{ if(r&&r.attempts) all.push(...Object.values(r.attempts)); });
+  const names={}; Object.values(room.players||{}).forEach(p=>names[p.uuid]=p.name||'?');
+  const nameOf=a=>names[a.uuid]||a.name||'?';
+  const awards=[];
+  const fastest=all.filter(a=>a.correct && a.elapsed!=null).sort((a,b)=>a.elapsed-b.elapsed)[0];
+  if(fastest) awards.push({ icon:'⚡', title:'最速早押し', name:nameOf(fastest), val:`${fastest.elapsed.toFixed(2)} 秒で正解` });
+  const count=(filter)=>{ const m={}; all.filter(filter).forEach(a=>m[a.uuid]=(m[a.uuid]||0)+1); return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]; };
+  const best=count(a=>a.correct);
+  if(best) awards.push({ icon:'🎯', title:'正解王', name:names[best[0]]||'?', val:`${best[1]} 問正解` });
+  const miss=count(a=>!a.correct);
+  if(miss) awards.push({ icon:'💥', title:'お手つき王', name:names[miss[0]]||'?', val:`${miss[1]} 回ミス` });
+  el.style.display=awards.length?'':'none';
+  el.innerHTML=awards.map(a=>`<div class="award"><div class="award-icon">${a.icon}</div><div class="award-title">${a.title}</div><div class="award-name">${escHtml(a.name)}</div><div class="award-val">${a.val}</div></div>`).join('');
 }
 
 function renderStandings(elId, room, final){
@@ -2069,8 +2456,10 @@ function renderStandings(elId, room, final){
 
 // 統計を一度だけ記録
 function recordMyStatsOnce(room){
-  if(lastFinishedRoom===room.id) return;
-  lastFinishedRoom=room.id;
+  // 「続ける」で同じ部屋の2戦目以降も記録されるよう、出題内容込みのキーで判定
+  const statKey=room.id+':'+(room.game?.questions||[]).map(q=>q.videoId).join(',');
+  if(lastFinishedRoom===statKey) return;
+  lastFinishedRoom=statKey;
   const u=getUser();
   const scores=room.game?.scores||{};
   const myScore=scores[u.uuid]||0;
@@ -2099,7 +2488,7 @@ function leaveRoom(){
     db.ref(`rooms/${id}/players/${u.uuid}`).onDisconnect().cancel();
     db.ref(`rooms/${id}/players/${u.uuid}`).remove();
   }
-  STATE.currentRoomId=null; showPage('rooms');
+  STATE.currentRoomId=null; lsSet(LS.room, null); showPage('rooms');
 }
 
 // ============================================================
@@ -2140,6 +2529,7 @@ function startSoloQuiz(){
   if(pool.length===0){ showToast('該当する曲がありません（正解未設定は除外）','error'); return; }
   const shuffled=[...pool].sort(()=>Math.random()-0.5);
   quiz={ songs:shuffled, current:0, score:0, answered:false, results:[], timer:null, timeLeft:30, playing:false };
+  fillDatalist('solo-choices', buildChoices(pool));
   showPage('quiz'); loadQuestion();
 }
 function loadQuestion(){
@@ -2196,6 +2586,7 @@ function onSoloSongStart(){
 function soloBuzz(){
   if(quiz.buzzed || quiz.answered) return;
   quiz.buzzed=true;
+  SFX.buzz(); vibrate(40);
   const elapsed = soloSongStart? (performance.now()-soloSongStart)/1000 : null;
   if(quiz.timer) clearInterval(quiz.timer);
   try{ soloPlayer.pauseVideo(); }catch(e){}
@@ -2242,8 +2633,8 @@ function submitAnswer(){
   input.className='answer-input '+(isCorrect?'correct':'wrong'); input.disabled=true;
   document.getElementById('submit-btn').disabled=true;
   const box=document.getElementById('feedback-box');
-  if(isCorrect){ quiz.score++; box.className='feedback-box correct'; document.getElementById('feedback-title').textContent='✓ 正解！'; }
-  else{ box.className='feedback-box wrong'; document.getElementById('feedback-title').textContent='✗ 不正解'; }
+  if(isCorrect){ quiz.score++; box.className='feedback-box correct'; document.getElementById('feedback-title').textContent='✓ 正解！'; SFX.correct(); confetti(1800); }
+  else{ box.className='feedback-box wrong'; document.getElementById('feedback-title').textContent='✗ 不正解'; SFX.wrong(); shakeEl('answer-input'); vibrate(200); }
   document.getElementById('feedback-answer').textContent=`正解：${(s.answers||[]).join(' / ')}`;
   document.getElementById('score-text').textContent=`${quiz.score} 正解`;
   quiz.results.push({ title:s.title, answer:(s.answers||[]).join(' / '), userInput:ua, correct:isCorrect });
@@ -2370,7 +2761,7 @@ function migrateLocalLists(){
 // 起動
 // ============================================================
 function boot(){
-  getUser(); renderProfileBadge();
+  getUser(); renderProfileBadge(); updateSfxBtn();
 
   if(IS_FILE){
     const b=document.createElement('div');
@@ -2410,6 +2801,7 @@ function boot(){
     if(u.name) db.ref('users/'+u.uuid).update({ name:u.name, uuid:u.uuid });
     document.getElementById('splash').style.display='none';
     if(!u.name) openProfileModal();
+    db.ref('rooms').once('value').then(snap=>{ STATE.rooms=objToArr(snap.val()); handleStartupJoin(); }).catch(()=>{});
   };
   db.ref('lists').once('value').then(finish).catch(()=>{
     document.getElementById('splash-text').textContent='接続に失敗しました。ネットワークやFirebase設定をご確認ください。';
