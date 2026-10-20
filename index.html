@@ -274,6 +274,28 @@
   .room-name { font-weight:800; font-size:16px; }
   .tile-kick { position:absolute; top:4px; right:4px; width:24px; height:24px; border-radius:50%; border:1px solid var(--color-border); background:rgba(0,0,0,0.25); color:var(--color-muted); font-size:11px; cursor:pointer; line-height:1; opacity:.7; }
   .tile-kick:hover { opacity:1; color:var(--color-wrong); border-color:var(--color-wrong); }
+  .team-pick { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:14px; padding-top:12px; border-top:1px solid var(--color-border); }
+  .team-pick[hidden] { display:none; }
+  .team-pick-label { font-size:13px; font-weight:800; color:var(--color-muted); }
+  .team-btn { padding:7px 16px; border-radius:999px; border:2px solid var(--color-border-strong); background:none; color:var(--color-text); font:inherit; font-size:14px; font-weight:800; cursor:pointer; }
+  .team-btn.red.active { background:rgba(255,93,108,0.2); border-color:#ff5d6c; }
+  .team-btn.blue.active { background:rgba(62,197,255,0.2); border-color:#3ec5ff; }
+  .team-count { font-size:12px; color:var(--color-muted); }
+  .player-tile.team-red { box-shadow:inset 0 0 0 2px #ff5d6c; }
+  .player-tile.team-blue { box-shadow:inset 0 0 0 2px #3ec5ff; }
+  .score-chip.team-red { border-color:rgba(255,93,108,0.7); }
+  .score-chip.team-blue { border-color:rgba(62,197,255,0.7); }
+  .team-total { display:inline-flex; align-items:center; gap:6px; padding:4px 12px; border-radius:999px; font-size:13px; font-weight:800; }
+  .team-total.red { background:rgba(255,93,108,0.18); color:#ff8a95; }
+  .team-total.blue { background:rgba(62,197,255,0.18); color:#7fd8ff; }
+  .team-total b { font-size:16px; color:#fff; }
+  .team-result { text-align:center; margin:6px 0 18px; padding:16px; border-radius:var(--radius-lg); background:var(--color-surface); border:1px solid var(--color-border); }
+  .team-result[hidden] { display:none; }
+  .team-result.win-red { border-color:#ff5d6c; background:linear-gradient(135deg, rgba(255,93,108,0.18), var(--color-surface)); }
+  .team-result.win-blue { border-color:#3ec5ff; background:linear-gradient(135deg, rgba(62,197,255,0.18), var(--color-surface)); }
+  .team-result-title { font-size:22px; font-weight:900; }
+  .team-result-score { margin-top:6px; font-size:28px; font-weight:900; display:flex; justify-content:center; gap:14px; }
+  .team-result-score .red { color:#ff8a95; } .team-result-score .blue { color:#7fd8ff; } .team-result-score .vs { color:var(--color-muted); }
   .listen-opt { margin-top:14px; padding-top:12px; border-top:1px solid var(--color-border); }
   .listen-opt[hidden] { display:none; }
   .tile-listen { position:absolute; top:4px; left:6px; font-size:13px; }
@@ -864,6 +886,12 @@
     <div class="card">
       <div class="card-title">参加者 <span id="lobby-player-count" style="color:var(--color-muted); font-weight:700;"></span></div>
       <div id="lobby-players" class="player-tiles"></div>
+      <div class="team-pick" id="team-pick" hidden>
+        <span class="team-pick-label">あなたのチーム</span>
+        <button class="team-btn red" type="button" data-team="red" onclick="pickTeam('red')">🔴 赤</button>
+        <button class="team-btn blue" type="button" data-team="blue" onclick="pickTeam('blue')">🔵 青</button>
+        <span class="team-count" id="team-count"></span>
+      </div>
       <div class="listen-opt" id="listen-opt" hidden>
         <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleListenHost()">
           <div class="toggle-track" id="listen-track"><div class="toggle-knob"></div></div>
@@ -935,6 +963,14 @@
           <span style="font-size:13px;" id="choice-label">OFF</span>
         </div>
         <div class="form-hint">早押しのあと、4つの曲名から答えを選びます。スマホでも遊びやすく、初めての人がいるときにおすすめ。</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">チーム戦（🔴 赤・🔵 青）</label>
+        <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleTeamMode()">
+          <div class="toggle-track" id="team-track"><div class="toggle-knob"></div></div>
+          <span style="font-size:13px;" id="team-label">OFF</span>
+        </div>
+        <div class="form-hint">個人の得点の合計で、チームの勝ち負けを決めます。チームはロビーで各自が選べます（選んでいない人は開始時に人数が少ない方へ）。設定を保存すると参加者に選ぶボタンが出ます。</div>
       </div>
       <div class="form-group">
         <label class="form-label">結果発表のあと自動で次の問題へ</label>
@@ -1082,6 +1118,7 @@
     <!-- 最終結果 -->
     <div id="match-finished-view" style="display:none;">
       <div class="result-label" style="text-align:center;">🏁 FINAL RESULT</div>
+      <div class="team-result" id="finished-team" hidden></div>
       <div class="podium" id="finished-podium"></div>
       <div class="awards" id="finished-awards"></div>
       <div class="stand-list" id="finished-standings" style="margin-top:16px;"></div>
@@ -2663,7 +2700,9 @@ function joinRoom(id){
   if(room.kicked && room.kicked[u.uuid]){ showToast('この部屋には入れません（ホストによって外されました）','error'); return; }
   const already=!!(room.players&&room.players[u.uuid]);
   if(room.status==='playing' && !already) setTimeout(()=>showToast('対戦の途中から参加しました。今の問題から答えられます','success'), 400);
-  db.ref(`rooms/${id}/players/${u.uuid}`).set({ uuid:u.uuid, name:u.name, joinedAt:Date.now(), ...(listenHostOn()?{ listen:true }:{}) })
+  const team=already ? (room.players[u.uuid].team||null) : (isTeamRoom(room) && room.status!=='lobby' ? smallerTeam(room) : null);
+  if(team) myTeamMemo[id]=team;
+  db.ref(`rooms/${id}/players/${u.uuid}`).set({ uuid:u.uuid, name:u.name, joinedAt:Date.now(), ...(listenHostOn()?{ listen:true }:{}), ...(team?{ team }:{}) })
     .then(()=>{ document.getElementById('join-code').value=''; enterLobby(id); });
 }
 // 招待リンク（?room=コード）。非公開部屋は合言葉を使う
@@ -2772,7 +2811,8 @@ function settingsSummaryHtml(s){
     `<span class="pill">${s.suggestOn===false?'回答候補なし':'回答候補あり'}</span>`,
     choice,
     s.chorusOn?'<span class="pill">サビ再生</span>':'',
-    s.handicap?'<span class="pill">ハンデ戦</span>':''
+    s.handicap?'<span class="pill">ハンデ戦</span>':'',
+    s.teamMode?'<span class="pill">👥 チーム戦</span>':''
   ].join('');
 }
 const lobbySeenPlayers={};   // 部屋ごとに表示済みの参加者（新しく入った人だけアニメーションする）
@@ -2802,14 +2842,21 @@ function renderLobby(id, room){
     const crown=p.uuid===room.hostUuid?'<span class="tile-crown" title="ホスト">👑</span>':'';
     const ear=(p.listen && p.uuid!==room.hostUuid)?'<span class="tile-listen" title="ホストの端末の音で聴く">🔈</span>':'';
     const kick=(isHost && p.uuid!==u.uuid)?`<button class="tile-kick" type="button" title="部屋から外す" aria-label="${escAttr(p.name||'?')} さんを部屋から外す" onclick="kickPlayer('${safeId(p.uuid)}')">✕</button>`:'';
-    return `<div class="player-tile${isNew?' new':''}${p.uuid===u.uuid?' me':''}">${crown}${ear}${kick}<div class="tile-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</div><div class="tile-name">${escHtml(p.name||'?')}${p.uuid===u.uuid?'（あなた）':''}</div></div>`;
+    const tcls=(isTeamRoom(room) && TEAMS[p.team])?' team-'+p.team:'';
+    return `<div class="player-tile${isNew?' new':''}${p.uuid===u.uuid?' me':''}${tcls}">${crown}${ear}${kick}<div class="tile-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</div><div class="tile-name">${escHtml(p.name||'?')}${p.uuid===u.uuid?'（あなた）':''}</div></div>`;
   }).join('');
   const lp=document.getElementById('lobby-players');
-  const key=players.map(p=>p.uuid+':'+p.name+':'+(p.listen?1:0)).join(',')+'|'+room.hostUuid+'|'+(isHost?1:0);
+  const key=players.map(p=>p.uuid+':'+p.name+':'+(p.listen?1:0)+':'+(p.team||'')).join(',')+'|'+room.hostUuid+'|'+(isHost?1:0)+'|'+(isTeamRoom(room)?1:0);
   if(lp.dataset.key!==key){ lp.innerHTML=tilesHtml; lp.dataset.key=key; players.forEach(p=>seen.add(p.uuid)); }
 
   document.getElementById('lobby-host-settings').style.display=isHost?'':'none';
   document.getElementById('listen-opt').hidden=isHost; if(!isHost) syncListenUI();
+  const tp=document.getElementById('team-pick'); tp.hidden=!isTeamRoom(room);
+  if(isTeamRoom(room)){
+    const mine=((room.players||{})[u.uuid]||{}).team, c=teamCounts(room);
+    tp.querySelectorAll('.team-btn').forEach(b=>b.classList.toggle('active', b.dataset.team===mine));
+    document.getElementById('team-count').textContent=`🔴 ${c.red}人 ／ 🔵 ${c.blue}人${players.length-c.red-c.blue>0?` ／ 未定 ${players.length-c.red-c.blue}人`:''}`;
+  }
   if(!isHost) document.getElementById('lobby-settings-summary').innerHTML=settingsSummaryHtml(room.settings||{});
   // ホスト：画面下に「▶ 対戦を開始」を固定
   document.getElementById('lobby-cta').hidden=!isHost;
@@ -2845,6 +2892,7 @@ function populateHostSettings(s){
   setSuggest(s.suggestOn ?? true);
   setAutoNext(!!s.autoNext);
   setChoiceMode(!!s.choiceMode);
+  setTeamMode(!!s.teamMode);
   populateYaminabeGenre(s.yaminabeGenre||'');
 }
 let suggestOn=true;
@@ -2861,6 +2909,42 @@ function setAutoNext(on){
   document.getElementById('autonext-label').textContent=on?'ON':'OFF';
 }
 function toggleAutoNext(){ setAutoNext(!autoNextOn); }
+// ===== チーム戦 =====
+const TEAMS={ red:{ name:'赤', icon:'🔴' }, blue:{ name:'青', icon:'🔵' } };
+let teamModeOn=false;
+function setTeamMode(on){
+  teamModeOn=on;
+  document.getElementById('team-track').classList.toggle('on',on); refreshToggleAria();
+  document.getElementById('team-label').textContent=on?'ON':'OFF';
+}
+function toggleTeamMode(){ setTeamMode(!teamModeOn); }
+function isTeamRoom(room){ return !!(room && room.settings && room.settings.teamMode); }
+const myTeamMemo={};   // 部屋ごとの自分のチーム（再接続で参加情報を書き直すときに残すため）
+function pickTeam(t){
+  const id=STATE.currentRoomId; if(!id || !TEAMS[t]) return;
+  myTeamMemo[id]=t;
+  db.ref(`rooms/${id}/players/${getUser().uuid}/team`).set(t).catch(()=>{});
+}
+function teamCounts(room){ const c={ red:0, blue:0 }; Object.values(room.players||{}).forEach(p=>{ if(TEAMS[p.team]) c[p.team]++; }); return c; }
+function smallerTeam(room){ const c=teamCounts(room); return c.red<=c.blue?'red':'blue'; }
+// チームが決まっていない人を、人数が少ない方へ振り分ける（開始時）
+function teamAssignUpdates(room){
+  const ups={}, c=teamCounts(room);
+  Object.values(room.players||{}).filter(p=>!TEAMS[p.team]).sort(()=>Math.random()-0.5).forEach(p=>{
+    const t=c.red<=c.blue?'red':'blue'; c[t]++; ups[`rooms/${room.id}/players/${p.uuid}/team`]=t;
+  });
+  return ups;
+}
+function teamTotals(room){
+  const s=(room.game&&room.game.scores)||{}, tot={ red:0, blue:0 };
+  Object.values(room.players||{}).forEach(p=>{ if(TEAMS[p.team]) tot[p.team]+=safeNum(s[p.uuid]); });
+  return tot;
+}
+function winningTeam(room){ const t=teamTotals(room); return t.red>t.blue?'red':t.blue>t.red?'blue':null; }
+function teamTotalsHtml(room){
+  const t=teamTotals(room);
+  return `<span class="team-total red">🔴 赤 <b>${t.red}</b></span><span class="team-total blue">🔵 青 <b>${t.blue}</b></span>`;
+}
 let choiceModeOn=false;
 function setChoiceMode(on){
   choiceModeOn=on;
@@ -2938,6 +3022,7 @@ function saveRoomSettings(){
     answerLimit:parseInt(document.getElementById('set-answer-limit').value,10)||20,
     autoNext:autoNextOn,
     choiceMode:choiceModeOn,
+    teamMode:teamModeOn,
     suggestOn
   };
   lsSet(LS.hostSettings, settings);   // 次に部屋を建てたときの初期値にする
@@ -2974,7 +3059,8 @@ function hostStartMatch(){
   if(choiceModeOn) questions.forEach(q=>{ q.options=makeOptions((q.answers||[])[0], choices); });
   const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:yaminabeOn, choices, choiceYomi };
   matchLocal={ idx:-1, buzzSent:false, answered:false, myTurn:false, elapsed:null, chorusPlayed:false };
-  db.ref('rooms/'+id).update({ status:'playing', game }).then(()=>showToast(yaminabeOn?'闇鍋スタート！':'対戦開始！','success'));
+  const ups={ [`rooms/${id}/status`]:'playing', [`rooms/${id}/game`]:game, ...(teamModeOn?teamAssignUpdates(room):{}) };
+  db.ref().update(ups).then(()=>showToast(yaminabeOn?'闇鍋スタート！':'対戦開始！','success'));
 }
 
 // ============================================================
@@ -3495,7 +3581,7 @@ function rejoinCurrentRoom(){
     if(!s.exists() || STATE.currentRoomId!==id) return;   // 部屋がなくなっていたら作り直さない
     const r=STATE.rooms.find(x=>x.id===id); if(r && r.kicked && r.kicked[u.uuid]) return;   // 外された部屋には戻らない
     ref.onDisconnect().remove();
-    ref.set({ uuid:u.uuid, name:u.name, joinedAt:STATE.myJoinedAt||Date.now(), ...(listenHostOn()?{ listen:true }:{}) });
+    ref.set({ uuid:u.uuid, name:u.name, joinedAt:STATE.myJoinedAt||Date.now(), ...(listenHostOn()?{ listen:true }:{}), ...(myTeamMemo[id]?{ team:myTeamMemo[id] }:{}) });
   }).catch(()=>{});
 }
 // 誰もいない部屋の片付け（60秒以上ずっと空なら削除。リロード中の一瞬の空は消さない）
@@ -3526,6 +3612,7 @@ function renderRoomState(id, room){
     return;
   }
   if(room.kicked && room.kicked[getUser().uuid] && STATE.currentRoomId===id){ leaveKickedRoom(id); return; }
+  { const mine=(room.players||{})[getUser().uuid]; if(mine && TEAMS[mine.team]) myTeamMemo[id]=mine.team; }
   noticeHostChange(id, room);
   maybeClaimHost(id, room);
   updateReactions(room);
@@ -4101,7 +4188,9 @@ function shareMatchResult(){
   const room=lastFinishedRoomView; if(!room) return;
   const medals=['🥇','🥈','🥉'];
   const lines=sortedStandings(room).map((p,i)=>`${medals[i]||(i+1)+'.'} ${p.name} ${p.score}pt`);
-  shareText(`🎵 INTRO QUIZ 対戦結果（${(room.game&&room.game.total)||'?'}問）\n${lines.join('\n')}`);
+  let teamLine='';
+  if(isTeamRoom(room)){ const t=teamTotals(room), w=winningTeam(room); teamLine=`🔴 赤 ${t.red} － ${t.blue} 青 🔵（${w?TEAMS[w].name+'チームの勝ち':'引き分け'}）\n`; }
+  shareText(`🎵 INTRO QUIZ 対戦結果（${(room.game&&room.game.total)||'?'}問）\n${teamLine}${lines.join('\n')}`);
 }
 function renderFinished(id, room){
   lastFinishedRoomView=room;
@@ -4113,6 +4202,13 @@ function renderFinished(id, room){
   renderStandings('finished-standings', room, true);
   renderPodium(room);
   renderAwards(room);
+  const tr=document.getElementById('finished-team');
+  if(isTeamRoom(room)){
+    const t=teamTotals(room), w=winningTeam(room);
+    tr.hidden=false;
+    tr.className='team-result'+(w?' win-'+w:'');
+    tr.innerHTML=`<div class="team-result-title">${w?`${TEAMS[w].icon} ${TEAMS[w].name}チームの勝ち！`:'🤝 引き分け'}</div><div class="team-result-score"><span class="red">🔴 ${t.red}</span><span class="vs">－</span><span class="blue">${t.blue} 🔵</span></div>`;
+  } else tr.hidden=true;
 
   // 演出：最終結果は1回だけファンファーレ（自分が1位なら紙吹雪）
   const g=room.game;
@@ -4121,7 +4217,8 @@ function renderFinished(id, room){
     finishFxKey=finKey;
     SFX.fanfare();
     const top=sortedStandings(room)[0];
-    if(top && top.uuid===getUser().uuid && top.score>0) setTimeout(()=>confetti(3200), 500);
+    const myTeam=((room.players||{})[getUser().uuid]||{}).team;
+    if(isTeamRoom(room) ? (myTeam && winningTeam(room)===myTeam) : (top && top.uuid===getUser().uuid && top.score>0)) setTimeout(()=>confetti(3200), 500);
   }
 
   // 曲一覧ログ
@@ -4194,7 +4291,8 @@ function hostContinueMatch(excludePlayed){
   if(s.choiceMode) questions.forEach(q=>{ q.options=makeOptions((q.answers||[])[0], choices); });
   const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:!!s.yaminabe, choices, choiceYomi };
   matchLocal={ idx:-1, buzzSent:false, answered:false, myTurn:false, elapsed:null, chorusPlayed:false };
-  db.ref('rooms/'+room.id).update({ status:'playing', game }).then(()=>showToast('対戦を続けます！','success'));
+  const ups={ [`rooms/${room.id}/status`]:'playing', [`rooms/${room.id}/game`]:game, ...(isTeamRoom(room)?teamAssignUpdates(room):{}) };
+  db.ref().update(ups).then(()=>showToast('対戦を続けます！','success'));
 }
 
 // スコアチップ（回答済みは薄く）
@@ -4210,10 +4308,11 @@ function renderScoreChips(elId, room, subsForRound){
     if(prev!=null && cur!==prev) chipFx[k]={ cls:cur>prev?'bump':'drop', until:now+700 };
     chipPrevScores[k]=cur;
   });
-  const html=players.map(p=>{
+  const teamOn=isTeamRoom(room);
+  const html=(teamOn?teamTotalsHtml(room):'')+players.map(p=>{
     const done=subsForRound && subsForRound[p.uuid];
     const fx=chipFx[room.id+':'+p.uuid]; const fxCls=(fx&&fx.until>now)?fx.cls:'';
-    return `<span class="score-chip ${p.uuid===me?'me':''} ${done?'done':''} ${fxCls}">
+    return `<span class="score-chip ${p.uuid===me?'me':''} ${done?'done':''} ${fxCls} ${teamOn&&TEAMS[p.team]?'team-'+p.team:''}">
       <span class="chip-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</span>
       <span>${escHtml(p.name||'?')}</span><span class="score-val">${safeNum(scores[p.uuid])}</span>
     </span>`;
@@ -4296,7 +4395,8 @@ function recordMyStatsOnce(room){
   const scores=room.game?.scores||{};
   const myScore=scores[u.uuid]||0;
   const sorted=Object.entries(scores).sort((a,b)=>b[1]-a[1]);
-  const isWinner = sorted.length && sorted[0][0]===u.uuid;
+  const myTeam=((room.players||{})[u.uuid]||{}).team;
+  const isWinner = isTeamRoom(room) ? (!!myTeam && winningTeam(room)===myTeam) : (sorted.length && sorted[0][0]===u.uuid);
   db.ref(`users/${u.uuid}/stats`).transaction(s=>{
     s=s||{ games:0, totalScore:0, wins:0 };
     s.games=(s.games||0)+1; s.totalScore=(s.totalScore||0)+myScore; if(isWinner) s.wins=(s.wins||0)+1;
