@@ -1003,7 +1003,7 @@
       </div>
       <div class="match-elapsed" id="match-elapsed">経過: 0.00 秒</div>
 
-      <button class="buzz-btn" id="match-buzz-btn" onpointerdown="buzz()" onclick="buzz()" style="display:none;">🔔 早押し！</button>
+      <button class="buzz-btn" id="match-buzz-btn" onpointerdown="event.preventDefault(); buzz()" onclick="buzz()" style="display:none;">🔔 早押し！</button>
 
       <div id="match-answer-wrap" style="display:none; margin-top:16px;">
         <div class="answer-label" id="match-buzz-elapsed" style="color:var(--color-accent);"></div>
@@ -1145,7 +1145,7 @@
       <button class="pause-btn" id="solo-pause-btn" onclick="soloTogglePlay()" style="display:none;">⏸ 一時停止</button>
     </div>
     <button class="btn-primary" id="solo-start-btn" style="width:100%; margin-bottom:14px;" onclick="soloStart()">▶ 再生してスタート</button>
-    <button class="buzz-btn" id="solo-buzz-btn" style="display:none;" onpointerdown="soloBuzz()" onclick="soloBuzz()"><span>🔔</span><span>わかった！</span></button>
+    <button class="buzz-btn" id="solo-buzz-btn" style="display:none;" onpointerdown="event.preventDefault(); soloBuzz()" onclick="soloBuzz()"><span>🔔</span><span>わかった！</span></button>
     <button class="giveup-btn" id="solo-giveup-btn" style="display:none;" onclick="soloGiveUp()">わからない（答えを見る）</button>
     <button class="giveup-btn" id="solo-skip-btn" style="display:none;" onclick="soloSkipSong()">⏭ この曲を飛ばす（出題数から外します）</button>
     <div class="answer-area" id="solo-answer-area" style="display:none;">
@@ -3551,6 +3551,7 @@ function buzz(){
   if(matchLocal.buzzSent) return;
   if(!matchStarted){ showToast('再生開始までお待ちください','error'); return; }
   if(round.buzzes && round.buzzes[me]) return;
+  lastBuzzTapAt=performance.now();
   matchLocal.buzzSent=true; matchLocal.claiming=true;
   matchLocal.elapsed=matchCurrentTime();
   vibrate(40);
@@ -3609,9 +3610,9 @@ function buzzDecideAt(round, playerIds){
   return Math.min(t, open+BUZZ_MAX_WAIT_MS);
 }
 // 再生位置がいちばん短い人（同じなら先に届いた人）
-function pickBuzzWinner(round){
+function pickBuzzWinner(round, playerIds){
   const now=serverNow(), lo=round.lockouts||{};
-  return Object.entries(round.buzzes||{}).filter(([u,b])=>b && (lo[u]||0)<=now)
+  return Object.entries(round.buzzes||{}).filter(([u,b])=>b && (lo[u]||0)<=now && (!playerIds || playerIds.includes(u)))
     .sort((a,b)=>(safeNum(a[1].e,9999)-safeNum(b[1].e,9999)) || (safeNum(a[1].at)-safeNum(b[1].at)))[0]||null;
 }
 let buzzDecideTimer=null;
@@ -3632,7 +3633,7 @@ function decideBuzz(id, idx, tries){
     early=false;
     if(!cur || cur.answerer || cur.resolved || !cur.buzzes) return;
     if(serverNow() < buzzDecideAt(cur, players)-20){ early=true; return; }   // まだ早い（時計のずれ）→ 少し後でもう一度
-    const w=pickBuzzWinner(cur);
+    const w=pickBuzzWinner(cur, players);
     if(w){ cur.answerer=w[0]; cur.answererName=w[1].name||'?'; cur.answererElapsed=safeNum(w[1].e,null); cur.answerStartAt=serverNow(); cur.lastBuzzes=cur.buzzes; }
     cur.buzzes=null; cur.buzzOpenAt=null;
     return cur;
@@ -4399,7 +4400,7 @@ function setSoloPauseBtn(playing){
 }
 function soloBuzz(){
   if(quiz.buzzed || quiz.answered || !soloPlaying) return;
-  quiz.buzzed=true;
+  quiz.buzzed=true; lastBuzzTapAt=performance.now();
   SFX.buzz(); vibrate(40);
   const elapsed=soloCurrentTime(); quiz.lastTime=elapsed;
   if(quiz.timer) clearInterval(quiz.timer);
@@ -4409,6 +4410,19 @@ function soloBuzz(){
   document.getElementById('solo-buzz-time').textContent=`タイム: ${elapsed.toFixed(2)} 秒 — 曲名を入力`;
   soloRevealAnswerInput();
 }
+// タッチ操作では、指を離したとき（pointerup・touchend）でないとキーボードを開けない端末がある（iPhone など）。
+// 早押しの直後（1.5秒以内）に指を離したら、回答欄にもう一度フォーカスする
+let lastBuzzTapAt=-1e9;
+function refocusAnswerAfterTap(){
+  if(performance.now()-lastBuzzTapAt>1500) return;
+  let inp=null;
+  if(document.getElementById('page-match').classList.contains('active') && (matchLocal.preTyping || matchLocal.myTurn) && !matchLocal.answered) inp=document.getElementById('match-answer-input');
+  else if(document.getElementById('page-quiz').classList.contains('active') && quiz.buzzed && !quiz.answered) inp=document.getElementById('answer-input');
+  if(!inp || inp.offsetParent===null || document.activeElement===inp) return;
+  inp.focus();
+}
+document.addEventListener('pointerup', e=>{ if(e.pointerType!=='mouse') refocusAnswerAfterTap(); }, true);
+document.addEventListener('touchend', refocusAnswerAfterTap, true);
 function soloRevealAnswerInput(){
   document.getElementById('solo-buzz-btn').style.display='none';
   document.getElementById('solo-answer-area').style.display='';
