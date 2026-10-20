@@ -3913,7 +3913,7 @@ function shareText(text, query=''){
   else prompt('この文章をコピーしてください', full);
 }
 function shareSoloResult(){
-  const list=getList(quiz.listId); const total=quiz.results.length;
+  const list=soloListById(quiz.listId); const total=quiz.results.length;
   const marks=quiz.results.map(r=>r.correct?'🟩':'🟥').join('');
   const times=quiz.results.filter(r=>r.correct && r.time!=null).map(r=>r.time);
   const avg=times.length?(times.reduce((a,b)=>a+b,0)/times.length).toFixed(1):null;
@@ -4168,13 +4168,23 @@ function renderSetup(){
   const grid=document.getElementById('setup-list-grid');
   const lists=visibleLists().filter(l=>(l.songs||[]).length>0);
   if(lists.length===0){ grid.innerHTML='<div class="empty-list" style="grid-column:1/-1;">プレイ可能なリストがありません。曲リストを作成してください。</div>'; return; }
-  grid.innerHTML=lists.map(l=>listCardHtml(l,{ onclick:`selectSetupList('${safeId(l.id)}')`, noPlay:true })).join('');
+  const all=lists.length>=2?[yaminabeSoloList()]:[];
+  grid.innerHTML=[...all, ...lists].map(l=>listCardHtml(l,{ onclick:`selectSetupList('${safeId(l.id)}')`, noPlay:true })).join('');
 }
+// ソロの闇鍋：見られる全リストの曲（同じ動画は1回）。各リストから1曲ずつ順に並べてジャケットも混ぜる
+const ALL_LISTS_ID='__all__';
+function yaminabeSoloList(){
+  const lists=visibleLists().filter(l=>(l.songs||[]).length>0);
+  const seen=new Set(), songs=[], queues=lists.map(l=>[...(l.songs||[])]);
+  while(queues.some(q=>q.length)) queues.forEach(q=>{ const s=q.shift(); if(s && !seen.has(s.videoId)){ seen.add(s.videoId); songs.push(s); } });
+  return { id:ALL_LISTS_ID, name:'🎲 闇鍋（全リストから）', visibility:'public', ownerName:`みんな（${lists.length}リスト）`, ownerUuid:'', songs, listCount:lists.length };
+}
+function soloListById(id){ return id===ALL_LISTS_ID ? yaminabeSoloList() : getList(id); }
 function selectSetupList(id){
   setupSelectedListId=id;
   document.querySelectorAll('#setup-list-grid .list-card').forEach(c=>c.classList.remove('selected'));
   document.querySelector(`#setup-list-grid .list-card[data-list="${id}"]`).classList.add('selected');
-  const list=getList(id);
+  const list=soloListById(id);
   const genres=[...new Set((list.songs||[]).map(s=>s.genre).filter(Boolean))];
   const sel=document.getElementById('setup-genre');
   sel.innerHTML='<option value="">すべてのジャンル</option>'+genres.map(g=>`<option value="${escAttr(g)}">${escHtml(g)}</option>`).join('');
@@ -4212,7 +4222,7 @@ function setSoloChoice(on){
 function toggleSoloChoice(){ setSoloChoice(!soloChoiceOn); }
 function startSoloQuiz(listId, genreArg){
   const lid=listId||setupSelectedListId;
-  const list=getList(lid); if(!list){ showToast('リストを選んでください','error'); return; }
+  const list=soloListById(lid); if(!list){ showToast('リストを選んでください','error'); return; }
   const genre=(genreArg!=null)?genreArg:document.getElementById('setup-genre').value;
   let pool=(list.songs||[]).filter(s=>!genre||s.genre===genre).filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）').map(playableSong);
   if(pool.length===0){ showToast('該当する曲がありません（正解未設定は除外）','error'); return; }
@@ -4292,7 +4302,7 @@ function renderDailyCard(){
 // リストカードの ▶：設定を飛ばしてすぐひとりで遊ぶ
 function quickPlaySolo(listId){ startSoloQuiz(listId, ''); }
 // 結果画面の「もう一度」：同じリスト・ジャンルで出題し直す
-function retrySolo(){ if(quiz && quiz.daily){ startDaily(); return; } if(quiz && quiz.listId && getList(quiz.listId)) startSoloQuiz(quiz.listId, quiz.genre||''); else showPage('setup'); }
+function retrySolo(){ if(quiz && quiz.daily){ startDaily(); return; } if(quiz && quiz.listId && soloListById(quiz.listId)) startSoloQuiz(quiz.listId, quiz.genre||''); else showPage('setup'); }
 function loadQuestion(){
   const s=quiz.songs[quiz.current]; const total=quiz.songs.length, idx=quiz.current;
   document.getElementById('progress-text').textContent=`${idx+1} / ${total}`;
