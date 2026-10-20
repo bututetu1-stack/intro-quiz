@@ -153,6 +153,21 @@
   @keyframes eq { 0%,100%{ height:10px; } 50%{ height:42px; } }
   .home-title { font-family:var(--font-display); font-weight:700; font-size:clamp(48px,10vw,96px); line-height:1; letter-spacing:2px;
     background:linear-gradient(180deg,#fff 10%,var(--color-accent) 90%); -webkit-background-clip:text; background-clip:text; color:transparent; filter:drop-shadow(0 6px 24px rgba(255,210,63,0.25)); }
+  .help-link { display:inline-flex; align-items:center; gap:4px; margin-top:12px; padding:6px 14px; border-radius:999px; border:1px solid var(--color-border); background:rgba(255,255,255,0.04); color:var(--color-muted); font:inherit; font-size:13px; font-weight:700; cursor:pointer; transition:var(--transition); }
+  .help-link:hover { color:var(--color-text); border-color:var(--color-accent); }
+  .help-modal { max-width:520px; }
+  .help-steps { list-style:none; margin:10px 0 16px; padding:0; display:grid; gap:10px; }
+  .help-steps li { display:flex; gap:12px; align-items:flex-start; padding:12px 14px; border-radius:var(--radius); background:rgba(255,255,255,0.04); border:1px solid var(--color-border); }
+  .help-steps .hs-icon { font-size:26px; line-height:1; flex-shrink:0; width:34px; text-align:center; }
+  .help-steps b { font-size:15px; }
+  .help-steps p, .help-sec p { margin:3px 0 0; font-size:13px; color:var(--color-muted); line-height:1.6; }
+  .help-sec { margin-top:14px; }
+  .help-h { font-weight:800; font-size:13px; color:var(--color-accent); letter-spacing:.5px; margin-bottom:4px; }
+  .help-sec ul { margin:0; padding-left:18px; font-size:13px; color:var(--color-muted); line-height:1.7; }
+  .help-sec[hidden] { display:none; }
+  .key-grid { display:grid; grid-template-columns:auto 1fr; gap:6px 14px; align-items:center; font-size:13px; color:var(--color-muted); }
+  .key-grid > span:nth-child(odd) { white-space:nowrap; color:var(--color-text); }
+  .key-grid kbd { display:inline-block; min-width:22px; padding:1px 7px; border-radius:6px; border:1px solid var(--color-border-strong); border-bottom-width:2px; background:rgba(255,255,255,0.06); font-family:var(--font-body); font-size:12px; font-weight:700; line-height:1.6; text-align:center; color:var(--color-text); }
   .home-subtitle { font-size:16px; color:var(--color-muted); margin-top:12px; font-weight:700; letter-spacing:1px; }
   .home-grid { display:grid; grid-template-columns:300px 1fr; gap:18px; align-items:stretch; }
   .profile-card { background:linear-gradient(160deg,rgba(139,92,246,0.18),rgba(255,255,255,0.02)), var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg); padding:22px; display:flex; flex-direction:column; align-items:center; text-align:center; gap:12px; }
@@ -660,6 +675,7 @@
       <button class="nav-btn" data-page="stats" onclick="showPage('stats')"><span class="nav-ic">🏆</span><span>成績</span></button>
     </div>
     <div class="conn-dot" id="conn-dot" title="接続状態"></div>
+    <button class="sfx-btn" type="button" onclick="openHelp()" title="遊び方" aria-label="遊び方">？</button>
     <button class="sfx-btn" id="sfx-btn" onclick="toggleSfx()" title="効果音のON/OFF">🔔</button>
     <div class="nav-profile" onclick="openProfileModal()">
       <div class="nav-avatar" id="nav-avatar">?</div>
@@ -675,6 +691,7 @@
       <div class="hero-eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
       <h1 class="home-title">INTRO QUIZ</h1>
       <div class="home-subtitle">イントロを聴いて、曲名を当てろ。</div>
+      <button class="help-link" type="button" onclick="openHelp()">❓ 遊び方・ルール</button>
     </div>
     <div class="home-grid">
       <!-- プロフィール：その場で名前を決められる（SongTrivia風） -->
@@ -757,6 +774,7 @@
     <div class="eyebrow">LOBBY</div>
     <div class="section-title" id="lobby-room-name">部屋</div>
     <div class="section-desc" id="lobby-room-meta"></div>
+    <button class="help-link" type="button" onclick="openHelp()" style="margin:-6px 0 14px;">❓ 遊び方・ルール</button>
 
     <div class="card code-panel" id="lobby-code-card">
       <div class="card-title" id="lobby-code-title">合言葉（友人に共有）</div>
@@ -1334,6 +1352,36 @@
       <input class="form-input" id="new-room-pass" type="text" maxlength="30" placeholder="例: ひみつの合言葉">
     </div>
     <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('room-modal')">キャンセル</button><button class="btn-go" onclick="createRoom()">作成して入室</button></div>
+  </div>
+</div>
+
+<!-- モーダル：遊び方 -->
+<div class="modal-overlay" id="help-modal">
+  <div class="modal help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="modal-title" id="help-title">遊び方</div>
+    <ol class="help-steps">
+      <li><span class="hs-icon">🎧</span><div><b>イントロを聴く</b><p>曲の始まりが流れます。動画は隠れていて、音だけが手がかり。</p></div></li>
+      <li><span class="hs-icon">🔔</span><div><b>わかったら早押し</b><p>いちばん早く押した人に回答権。曲名を入力するか、4択モードならボタンで選びます。</p></div></li>
+      <li><span class="hs-icon">🏆</span><div><b>正解で得点</b><p>正解すると +1点。間違えると5秒間押せず、その間にほかの人が答えられます。時間切れで正解発表。</p></div></li>
+    </ol>
+    <div class="help-sec"><div class="help-h">答え方</div><ul>
+      <li>ひらがな・カタカナ、全角・半角、大文字・小文字の違いや、記号・スペースは気にしなくて大丈夫です。</li>
+      <li>漢字の曲名は、よみがなで答えても正解になります（よみが登録されている曲）。</li>
+      <li>入力中に曲名の候補が出ます（対戦はホストの設定、ひとりで練習はオプションでオン・オフ）。</li>
+    </ul></div>
+    <div class="help-sec"><div class="help-h">ハンデ（ホストが設定）</div><p>自分で追加した曲は知っていて当然なので、外すと減点（初期値 −1点）、ほかの人の曲を当てると高得点（初期値 +2点）になります。</p></div>
+    <div class="help-sec"><div class="help-h">ひとりで練習</div><p>好きな曲リストで、自分のペースで遊べます。タイムと連続正解を記録し、リストごとの自己ベストが残ります。</p></div>
+    <div class="help-sec help-keys"><div class="help-h">キーボード操作</div>
+      <div class="key-grid">
+        <span><kbd>Space</kbd></span><span>早押し／ひとりで練習の再生・停止</span>
+        <span><kbd>1</kbd>〜<kbd>4</kbd></span><span>4択を選ぶ</span>
+        <span><kbd>Enter</kbd></span><span>回答を送る</span>
+        <span><kbd>↑</kbd> <kbd>↓</kbd></span><span>曲の音量</span>
+        <span><kbd>M</kbd></span><span>曲のミュート</span>
+        <span><kbd>Esc</kbd></span><span>閉じる</span>
+      </div>
+    </div>
+    <div class="modal-actions"><button class="btn-go" onclick="closeModal('help-modal')">わかった！</button></div>
   </div>
 </div>
 
@@ -2769,6 +2817,7 @@ document.addEventListener('keydown', e=>{
   if(!document.getElementById('page-match').classList.contains('active')) return;
   const ae=document.activeElement, tag=(ae&&ae.tagName)||'';
   if((tag==='INPUT' && ae.type!=='range')||tag==='TEXTAREA'||tag==='SELECT') return;
+  if(document.querySelector('.modal-overlay.open')) return;
   const b=document.getElementById('match-buzz-btn');
   if(b.style.display==='none' || b.disabled) return;
   e.preventDefault(); buzz();
@@ -4306,6 +4355,11 @@ document.addEventListener('keydown', e=>{
   const t=e.target;
   if(t && t.matches && t.matches('[role="button"],[role="switch"]') && t.tagName!=='BUTTON'){ e.preventDefault(); t.click(); }
 });
+function openHelp(){
+  document.querySelector('#help-modal .help-keys').hidden=!HAS_KEYBOARD;   // スマホではキー操作の説明を出さない
+  openModal('help-modal'); document.querySelector('#help-modal .modal').scrollTop=0;
+  setTimeout(()=>{ const b=document.querySelector('#help-modal .btn-go'); if(b && HAS_KEYBOARD) b.focus({preventScroll:true}); },60);
+}
 function openModal(id){
   const m=document.getElementById(id); m.classList.add('open');
   if(HAS_KEYBOARD){ const f=m.querySelector('input:not([type=hidden]):not([readonly]), select, textarea'); if(f) setTimeout(()=>f.focus(),50); }
