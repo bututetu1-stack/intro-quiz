@@ -310,6 +310,15 @@
   .start-btn { min-width:220px; font-size:18px; padding:16px 36px; }
   .settings-summary { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:14px; }
   .pill { font-size:12px; font-weight:800; padding:5px 12px; border-radius:999px; background:rgba(255,255,255,0.06); border:1px solid var(--color-border-strong); }
+  .daily-strip { display:grid; grid-template-columns:repeat(14,1fr); gap:4px; margin-top:4px; }
+  .dcell { display:flex; flex-direction:column; align-items:center; gap:1px; padding:5px 0; border-radius:8px; background:rgba(255,255,255,0.04); border:1px solid var(--color-border); }
+  .dcell .dd { font-size:10px; color:var(--color-muted); }
+  .dcell .ds { font-size:14px; font-weight:800; color:var(--color-muted); }
+  .dcell.on { background:rgba(52,211,153,0.14); border-color:rgba(52,211,153,0.4); }
+  .dcell.on .ds { color:var(--color-correct); }
+  .dcell.perfect { background:rgba(255,210,63,0.16); border-color:rgba(255,210,63,0.5); }
+  .dcell.perfect .ds { color:var(--color-accent); }
+  @media (max-width:560px){ .daily-strip { grid-template-columns:repeat(7,1fr); } }
   .best-row { display:flex; align-items:baseline; gap:10px; padding:10px 0; border-bottom:1px solid var(--color-border); flex-wrap:wrap; }
   .best-row:last-child { border-bottom:none; }
   .best-name { flex:1; font-weight:800; min-width:120px; }
@@ -1205,8 +1214,9 @@
   <div class="container">
     <div class="eyebrow">STATS</div>
     <div class="section-title">成績</div>
-    <div class="section-desc">オンライン対戦の成績を記録しています。</div>
+    <div class="section-desc">オンライン対戦の成績と、この端末での「今日のチャレンジ」「ひとりで練習」の記録です。</div>
     <div class="card" id="my-stats-card"></div>
+    <div class="card" id="daily-stats-card"></div>
     <div class="card" id="solo-bests-card"></div>
     <div style="font-size:13px; color:var(--color-muted); margin:8px 0 12px;">🏆 ランキング（勝利数順）</div>
     <div class="stand-list" id="stats-ranking"></div>
@@ -4292,6 +4302,31 @@ function dailyStreak(){
   return n;
 }
 const dailyMarks=rec=>(rec.marks||[]).map(m=>m?'🟩':'🟥').join('');
+// 成績ページ：今日のチャレンジの記録（この端末）
+function renderDailyStats(){
+  const el=document.getElementById('daily-stats-card'); if(!el) return;
+  const log=dailyLog(), days=Object.keys(log).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const head='<div class="card-title">📅 今日のチャレンジ（この端末）</div>';
+  if(!days.length){ el.innerHTML=head+'<div style="color:var(--color-muted); font-size:14px;">まだ記録がありません。ホームの「今日のチャレンジ」で、毎日みんなと同じ5曲に挑戦できます。</div>'; return; }
+  let longest=0, run=0, prev=null;
+  days.forEach(d=>{ const t=Date.parse(d+'T00:00:00Z'); run=(prev!=null && t-prev===86400000)?run+1:1; longest=Math.max(longest,run); prev=t; });
+  const score=days.reduce((s,d)=>s+safeNum(log[d].score),0), total=days.reduce((s,d)=>s+safeNum(log[d].total),0);
+  const perfect=days.filter(d=>safeNum(log[d].total)>0 && safeNum(log[d].score)===safeNum(log[d].total)).length;
+  const today=Date.parse(dailyDate()+'T00:00:00Z'), cells=[];
+  for(let i=13;i>=0;i--){
+    const d=new Date(today-i*86400000), k=d.toISOString().slice(0,10), r=log[k];
+    const full=r && safeNum(r.total)>0 && safeNum(r.score)===safeNum(r.total);
+    cells.push(`<div class="dcell${r?' on':''}${full?' perfect':''}" title="${k.slice(5).replace('-','/')} ${r?safeNum(r.score)+'/'+safeNum(r.total):'未挑戦'}"><span class="dd">${d.getUTCDate()}</span><span class="ds">${r?safeNum(r.score):'·'}</span></div>`);
+  }
+  el.innerHTML=head+`<div class="stat-grid">
+      <div class="stat-box"><div class="v">${days.length}</div><div class="l">挑戦した日</div></div>
+      <div class="stat-box"><div class="v">${dailyStreak()}</div><div class="l">🔥 連続（日）</div></div>
+      <div class="stat-box"><div class="v">${longest}</div><div class="l">最長連続（日）</div></div>
+      <div class="stat-box"><div class="v">${total?Math.round(score/total*100):0}%</div><div class="l">正解率</div></div>
+    </div>
+    <div class="daily-strip" aria-label="直近14日の結果">${cells.join('')}</div>
+    ${perfect?`<div class="form-hint" style="margin-top:8px;">🏆 パーフェクト ${perfect}回</div>`:''}`;
+}
 function renderDailyCard(){
   const card=document.getElementById('daily-card'); if(!card) return;
   const date=dailyDate(), rec=dailyLog()[date], streak=dailyStreak();
@@ -4665,11 +4700,12 @@ function renderStats(){
 
   // ソロの自己ベスト（この端末に保存されている分）
   let bests=[];
-  try{ bests=Object.keys(localStorage).filter(k=>k.startsWith('iq_best_')).map(k=>({ id:k.slice(8), ...(lsGet(k,{})||{}) })).filter(b=>getList(b.id) && b.total); }catch(e){}
+  try{ bests=Object.keys(localStorage).filter(k=>k.startsWith('iq_best_')).map(k=>({ id:k.slice(8), ...(lsGet(k,{})||{}) })).filter(b=>soloListById(b.id) && b.total); }catch(e){}
   bests.sort((a,b)=>b.rate-a.rate);
   document.getElementById('solo-bests-card').innerHTML=`<div class="card-title">ソロの自己ベスト（この端末）</div>`+(bests.length
-    ? bests.map(b=>`<div class="best-row"><span class="best-name">${escHtml(getList(b.id).name)}</span><span class="best-rate">${Math.round(b.rate*100)}%</span><span class="best-sub">${b.score}/${b.total}問${b.avg!=null?` ・ 平均${b.avg.toFixed(1)}秒`:''}</span></div>`).join('')
+    ? bests.map(b=>`<div class="best-row"><span class="best-name">${escHtml(soloListById(b.id).name)}</span><span class="best-rate">${Math.round(b.rate*100)}%</span><span class="best-sub">${b.score}/${b.total}問${b.avg!=null?` ・ 平均${b.avg.toFixed(1)}秒`:''}</span></div>`).join('')
     : '<div style="color:var(--color-muted); font-size:14px;">まだ記録がありません。「ひとりで練習」を最後まで遊ぶと記録されます。</div>');
+  renderDailyStats();
   const ranked=STATE.users.filter(u=>u.stats && safeNum(u.stats.games)>0)
     .sort((a,b)=> (safeNum(b.stats.wins)-safeNum(a.stats.wins)) || (safeNum(b.stats.totalScore)-safeNum(a.stats.totalScore)));
   const el=document.getElementById('stats-ranking');
