@@ -6,6 +6,11 @@
 <title>イントロクイズ｜INTRO QUIZ</title>
 <meta name="description" content="YouTubeのイントロを聴いて曲名を当てるクイズ。友達と早押し対戦、ひとりで練習もできます。">
 <meta name="theme-color" content="#0c0a1d">
+<meta property="og:type" content="website">
+<meta property="og:title" content="イントロクイズ｜INTRO QUIZ">
+<meta property="og:description" content="YouTubeのイントロを聴いて曲名を当てるクイズ。友達と早押し対戦、ひとりで練習もできます。">
+<meta property="og:url" content="https://bututetu1-stack.github.io/intro-quiz/">
+<meta name="twitter:card" content="summary">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23ffd23f'/%3E%3Ctext x='32' y='46' font-size='40' text-anchor='middle' fill='%231a1300'%3E%E2%99%AA%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1312,7 +1317,7 @@ const YT_API_KEY = "AIzaSyB7OK_8ozVW29QRW7UdfE2IJ86E5yV22B4";
 // グローバル状態
 // ============================================================
 const STATE = { lists: [], rooms: [], users: [], user: null, currentRoomId: null };
-const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest', soloCount: 'iq_solo_count', soloLimit: 'iq_solo_limit' };
+const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest', soloCount: 'iq_solo_count', soloLimit: 'iq_solo_limit', hostSettings: 'iq_host_settings' };
 
 function lsGet(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } }
 function lsSet(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
@@ -2211,12 +2216,21 @@ function createRoom(){
     visibility, status:'lobby',
     hostUuid:u.uuid, hostName:u.name,
     players:{ [u.uuid]:{ uuid:u.uuid, name:u.name, joinedAt:Date.now() } },
-    settings:{ listIds:def?[def.id]:[], listId:def?def.id:'', genre:'', count:10, handicap:false, hcOwnerMiss:-1, hcOtherHit:2, songLimit:30, suggestOn:true, autoNext:true },
+    settings:initialRoomSettings(def),
     createdAt:Date.now()
   };
   db.ref('rooms/'+id).set(room).then(()=>{ closeModal('room-modal'); enterLobby(id); showToast('部屋を作成しました','success'); });
 }
 
+// 新しい部屋の設定：前回この端末で使った設定（見られるリストだけ）＋足りない項目は既定値
+function initialRoomSettings(def){
+  const base={ listIds:def?[def.id]:[], listId:def?def.id:'', genre:'', count:10, handicap:false, hcOwnerMiss:-1, hcOtherHit:2, songLimit:30, suggestOn:true, autoNext:true };
+  const last=lsGet(LS.hostSettings, null); if(!last || typeof last!=='object') return base;
+  const s={ ...base, ...last };
+  const ids=(Array.isArray(last.listIds)?last.listIds:[]).filter(i=>{ const l=getList(i); return l && (l.visibility==='public' || l.ownerUuid===getUser().uuid); });
+  s.listIds=ids.length?ids:base.listIds; s.listId=s.listIds[0]||'';
+  return s;
+}
 function findRoomByCode(code){
   const lc=String(code||'').trim().toLowerCase(); if(!lc) return null;
   return STATE.rooms.find(r => (r.code&&r.code.toLowerCase()===lc) || (r.passphrase&&r.passphrase.toLowerCase()===lc)) || null;
@@ -2454,6 +2468,7 @@ function saveRoomSettings(){
     autoNext:autoNextOn,
     suggestOn
   };
+  lsSet(LS.hostSettings, settings);   // 次に部屋を建てたときの初期値にする
   return db.ref(`rooms/${id}/settings`).set(settings).then(()=>showToast('設定を保存しました','success'));
 }
 function hostStartMatch(){
@@ -3667,7 +3682,8 @@ function loadQuestion(){
   ensureSoloPlayer();
   // 2問目からは「Q2」の演出のあと自動で再生（1曲目で音声は解禁済み）
   showQIntro('solo-q-intro', idx+1, total);
-  if(idx>0 && soloAudioUnlocked){ sb.disabled=true; sb.textContent='まもなく再生…'; setSoloCover(false,'まもなく再生…'); clearTimeout(quiz.autoTimer); quiz.autoTimer=setTimeout(()=>{ if(quiz.songs[quiz.current]===s && !soloPlaying) soloStart(); }, 1000); }
+  // タップ・Enter の操作中に再生を始めると、iPhone でも自動再生が止められにくい
+  if(idx>0 && soloAudioUnlocked) soloStart();
 }
 function soloStart(){
   if(quiz.answered || !soloPendingVideo) return;
