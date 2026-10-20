@@ -26,11 +26,11 @@ const fnSrc=(name)=>{ const m=new RegExp('function '+name+'\\([^)]*\\)\\{').exec
   let i=m.index+m[0].length, depth=1; while(depth>0 && i<scripts.length){ const c=scripts[i++]; if(c==='{') depth++; else if(c==='}') depth--; } return scripts.slice(m.index,i); };
 const code=[
   pick('// ===== 曲名の自動判定（YouTubeの動画タイトル','function extractPlaylistId'),
-  fnSrc('normalize'), fnSrc('makeOptions'), fnSrc('seededRand'), fnSrc('answerVariants'), fnSrc('editDistance'), fnSrc('answerMatches'),
-  'globalThis.__t={ guessSongName, normalize, makeOptions, seededRand, playableSong, answerMatches };'
+  fnSrc('normalize'), fnSrc('makeOptions'), fnSrc('seededRand'), fnSrc('answerVariants'), fnSrc('editDistance'), fnSrc('answerMatches'), fnSrc('applySearchConsensus'),
+  'globalThis.__t={ guessSongName, normalize, makeOptions, seededRand, playableSong, answerMatches, applySearchConsensus };'
 ].join('\n');
 const ctx={}; vm.createContext(ctx); vm.runInContext(code, ctx);
-const { guessSongName, normalize, makeOptions, seededRand, playableSong, answerMatches }=ctx.__t;
+const { guessSongName, normalize, makeOptions, seededRand, playableSong, answerMatches, applySearchConsensus }=ctx.__t;
 
 // 3) 曲名の自動判定
 const readTsv=f=>fs.readFileSync(path.join(__dirname,f),'utf8').split(/\r?\n/).filter(Boolean).map(l=>l.split('\t'));
@@ -57,6 +57,14 @@ ok(ak.song==='悪魔の子' && ak.alts.includes('Akuma no Ko'), '別解（英語
 for(const [a,c] of [['てすと５','テスト5'],['ﾃｽﾄ','テスト'],['ＬＥＭＯＮ','Lemon'],['ゔぁんぷ','ヴァンプ'],['Ｕ.Ｓ.Ａ.','U.S.A.'],['夜に駆ける！','夜に駆ける']])
   ok(normalize(a)===normalize(c), `normalize: 「${a}」＝「${c}」`);
 ok(normalize('アイドル')!==normalize('アイロン'), 'normalize: 違う曲名は一致しない');
+
+// 曲名で検索：検索結果の多数決で曲名をそろえる
+const sr=[{title:'YOASOBI「夜に駆ける」 Official Music Video',channel:'YOASOBI'},{title:'夜に駆ける',channel:'YOASOBI - Topic'},{title:'YOASOBI 夜に駆ける',channel:'coco mirai'}];
+applySearchConsensus(sr);
+ok(sr.every(r=>r.song==='夜に駆ける'), '検索結果の多数決：「YOASOBI 夜に駆ける」→「夜に駆ける」');
+const sr2=[{title:'YOASOBI「アイドル」 Official Music Video',channel:'YOASOBI'},{title:'YOASOBI「群青」Official Music Video',channel:'YOASOBI'}];
+applySearchConsensus(sr2);
+ok(sr2[0].song==='アイドル' && sr2[1].song==='群青', '検索結果の多数決：別々の曲はそのまま');
 
 // 5) 回答の判定
 for(const [ua, ans, yomi, exp, why] of [

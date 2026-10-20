@@ -1906,20 +1906,30 @@ async function searchYouTube(){
     const data=await (await fetch(url)).json();
     if(data.error) throw new Error(data.error.message||'APIエラー');
     ytResults=(data.items||[]).map(it=>({ vid:safeId(it.id&&it.id.videoId), title:decodeEntities(it.snippet&&it.snippet.title), channel:decodeEntities(it.snippet&&it.snippet.channelTitle) })).filter(r=>r.vid);
+    applySearchConsensus(ytResults);
     renderYtResults();
     if(!ytResults.length) showToast('見つかりませんでした。別の言葉で検索してみてください','error');
   }catch(e){ showToast('検索できませんでした（'+(e.message||e)+'）','error'); }
   finally{ btn.disabled=false; btn.textContent='検索'; }
 }
+// 検索結果の曲名をそろえる：同じ検索結果の中でいちばん多い曲名（2件以上）を含む候補はその曲名にする
+// 例：「YOASOBI 夜に駆ける」（カバー動画・歌手名が空白区切り）→ ほかの結果の多くが「夜に駆ける」なら「夜に駆ける」
+function applySearchConsensus(results){
+  results.forEach(r=>{ r.song=guessSongName(r.title, r.channel).song||r.title; });
+  const count={}, first={};
+  results.forEach(r=>{ const k=songKey(r.song); if(!k) return; count[k]=(count[k]||0)+1; if(!first[k]) first[k]=r.song; });
+  const top=Object.keys(count).sort((a,b)=>count[b]-count[a])[0];
+  if(!top || count[top]<2) return;
+  results.forEach(r=>{ const k=songKey(r.song); if(k!==top && k.includes(top)) r.song=first[top]; });
+}
 function renderYtResults(){
   const el=document.getElementById('yt-results'); const list=getList(currentListId);
   const have=new Set(((list&&list.songs)||[]).map(s=>s.videoId));
   el.innerHTML=ytResults.map((r,i)=>{
-    const g=guessSongName(r.title, r.channel);
     const added=have.has(r.vid);
     return `<div class="yt-row">
       <img class="yt-thumb" src="https://img.youtube.com/vi/${r.vid}/mqdefault.jpg" alt="" loading="lazy">
-      <div class="yt-info"><div class="yt-song">${escHtml(g.song||r.title)}</div><div class="yt-title">${escHtml(r.title)}</div><div class="yt-ch">${escHtml(r.channel)}</div></div>
+      <div class="yt-info"><div class="yt-song">${escHtml(r.song||r.title)}</div><div class="yt-title">${escHtml(r.title)}</div><div class="yt-ch">${escHtml(r.channel)}</div></div>
       <button class="${added?'btn-sub':'btn-primary'} yt-add" type="button" ${added?'disabled':''} onclick="addFromSearch(${i})">${added?'追加済み':'＋ 追加'}</button>
     </div>`;
   }).join('');
@@ -1933,6 +1943,7 @@ async function addFromSearch(i){
   let m=null; try{ m=(await fetchVideoEntries([r.vid]))[0]||null; }catch(e){}
   if(m && m.problem){ showToast(`この動画は追加できません（${PROBLEM_LABEL[m.problem]}）`,'error'); renderYtResults(); return; }
   const song=songFromVideo(r.vid, (m&&m.title)||r.title, (m&&m.channel)||r.channel, document.getElementById('yt-genre').value, getUser());
+  if(r.song && songKey(r.song)!==songKey(song.answers[0])) song.answers=[r.song, ...song.answers.slice(1).filter(a=>songKey(a)!==songKey(r.song))];   // 検索結果でそろえた曲名
   const cur=getList(currentListId); if(!cur) return; cur.songs=cur.songs||[];
   if(cur.songs.some(s=>s.videoId===r.vid)){ renderYtResults(); return; }
   cur.songs.push(song);
