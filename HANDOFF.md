@@ -34,18 +34,21 @@ users/{uuid}        : { name, uuid, stats:{ games, totalScore, wins } }
 chorusCache/{videoId}: サビ開始秒（全部屋で共有するキャッシュ）
 rooms/{roomId}      : {
   name, code, passphrase, visibility:'public'|'private', status:'lobby'|'playing'|'finished',
-  hostUuid, hostName, players:{ uuid:{ uuid, name, joinedAt } },
+  hostUuid, hostName, players:{ uuid:{ uuid, name, joinedAt, listen?(ホストの端末の音で聴く) } },
+  kicked:{ uuid:true }（ホストが外した人。入り直し不可）, reactions:{ uuid:{ emoji, name, at } },
   settings:{ listIds[], listId, genre, count, yaminabe, yaminabeGenre, handicap, hcOwnerMiss, hcOtherHit,
-             chorusOn, correctPts, wrongPts, songLimit, suggestOn },
-  game:{ questions[], total, current, phase:'play'|'reveal', scores:{uuid:点}, choices[](回答候補),
+             chorusOn, correctPts, wrongPts, songLimit, answerLimit(回答時間・秒), suggestOn, choiceMode, autoNext },
+  game:{ questions[{ ..., options?(4択) }], total, current, phase:'play'|'reveal', scores:{uuid:点}, choices[](回答候補), choiceYomi[],
          rounds:{ idx:{ answerer, answererName, answererElapsed, answerStartAt, cycle, resolved,
+                        buzzes:{ uuid:{ e:経過秒, at, name } }, buzzOpenAt, lastBuzzes（判定待ちの早押しと、判定済みの記録）,
+                        pos:{ uuid: その曲を0秒から再生し始めたサーバー時刻ms }（早押しの判定・締め切りに使う）,
                         lockouts:{ uuid: 解除時刻(サーバー時刻ms) },
                         attempts:{ pushId:{ uuid, name, elapsed, answer, correct } } } },
          roundResult:{ idx:{ winnerUuid, winnerName, winnerPts, answer, title, adderPenalty, ... } } }
 }
 ```
 
-ユーザー識別は localStorage の `iq_user`（`{uuid, name}`）。ほかに `iq_room`（リロード復帰用）と `iq_sfx`（効果音の ON/OFF）を使う。
+ユーザー識別は localStorage の `iq_user`（`{uuid, name}`）。ほかに `iq_room`（リロード復帰用）、`iq_sfx`（効果音）、`iq_volume`・`iq_muted`（曲の音量）、`iq_listen_host`（ホストの端末の音で聴く）、`iq_host_settings`（前回の部屋設定）、`iq_solo_*`（ソロの設定）、`iq_best_{listId}`（ソロの自己ベスト。闇鍋は `__all__`）、`iq_daily`（今日のチャレンジの記録）、`iq_mr_down`（サビ取得 API の停止記録）を使う。
 
 ## 4. 対戦の流れ（主要関数）
 
@@ -56,9 +59,9 @@ rooms/{roomId}      : {
 | 開始 | `hostStartMatch` / `hostContinueMatch` / `buildPoolFromSettings` | 複数リストの選択、闇鍋、続ける（既出曲の除外あり） |
 | 状態の振り分け | `renderRoomState` → `renderMatch` / `renderReveal` / `renderFinished` | Firebase が更新されるたびに再描画する |
 | 再生 | `loadMatchVideo` / `unlockMatchAudio` / `matchPlayTick` | 各自1回タップして音声を解禁。上限は `currentSongLimit()` |
-| 早押し | `buzz` | `rounds/{idx}` をトランザクションで更新し、先に届いた人が回答権を取る。手元で先に反映しない（`applyLocally=false`）ので、押した直後は「判定中...」、約0.1秒で回答欄が出る |
+| 早押し | `buzz` → `scheduleBuzzDecide` / `decideBuzz` | 押した人は `rounds/{idx}/buzzes` に経過時間を書くだけ。まだ押していない人の再生位置（`pos` から計算、`playerT0`）が最短タイムを超える時刻＋0.25秒（最大1.5秒）に、押した人かホストがトランザクションで**再生位置（経過時間）が短い人**に回答権を渡す（PR #36）。待つ間はほかの人に見せない。「ホストの端末の音で聴く」人はホストの再生位置で測る（PR #48）。押した瞬間に入力欄を出して先に入力できる（PR #42・#44） |
 | 回答 | `sendAnswer` / `releaseAnswererUpdates` | **回答者本人が確定する**。正解なら `hostReveal` で採点と結果発表、誤答なら回答権を解放して5秒ペナルティ |
-| ホストの保険 | `maybeHostWatchAnswerer` / `hostForcePass` / `maybeHostTimeout` | 回答者が落ちたときの強制パス。曲の時間切れで「正解者なし」にする |
+| ホストの保険 | `maybeHostWatchAnswerer` / `hostForcePass` / `maybeHostTimeout` | 回答者が落ちたときの強制パス（回答時間は `answerLimitMs`）。曲の時間切れは、いちばん遅い人の再生位置が制限時間に届くまで待つ（最大3秒、PR #38） |
 | 結果発表 | `renderReveal` / `ensureChorusAndPlay` / `playMatchChorus` | サビのフェードイン・アウト。開始秒は手動指定 → 自動値 → キャッシュ → lemnoslife → 曲の中間点の順に決める |
 | 終了 | `renderFinished` / `renderPodium` / `renderAwards` / `recordMyStatsOnce` | 表彰台・称号・出題曲一覧（誰が何秒で答えたか） |
 | 退出 | `leaveRoom` / `cleanupMatch` | 再生を止めて各種タイマーを解除 |
@@ -67,9 +70,15 @@ rooms/{roomId}      : {
 
 演出は `SFX`（Web Audio で効果音を合成）、`confetti`、`showBuzzFlash`、`shakeEl` を使う。1問ごとに1回だけ鳴らす制御は `fxState` / `fxSync` で行っている。
 
-回答の正誤判定は `normalize` で表記ゆれを吸収してから比較する。ひらがなはカタカナに寄せ、英字は小文字にし、記号・絵文字・空白は除去する。
+回答の正誤判定は `answerMatches`（PR #37）。`normalize` で表記ゆれを吸収（ひらがな→カタカナ、英字は小文字、記号・絵文字・空白は除去）したうえで、括弧の副題を省いた形も正解、5文字以上は1文字・10文字以上は2文字までの打ち間違いを許す。4択は完全一致。正解が動画タイトルのままの曲は、出題時だけ `playableSong` で曲名を自動判定して正解にする（PR #35）。
 
 ## 5. 直近の変更
+
+- **PR #16〜#50（2026-10-21 深夜〜未明の自己採点ループ）**：詳細は「10. 自己採点ログ」。主なもの：
+  - 対戦：ホストの引き継ぎ（#22）、リアクション（#27）、4択（#25）、自動で次へ、途中参加（#34）、**早押しを再生位置で判定**（#36）、制限時間を遅い端末に合わせる（#38）、回答時間の設定（#41）、早押しと同時に入力欄（#42・#44）、通信切れの表示（#45）、ホストの端末の音で聴く（#48）、参加者を外す（#50）
+  - ソロ：やめる・もう一度・自己ベスト、Space で再生停止、回答候補 ON/OFF、闇鍋（#43）、**今日のチャレンジ**（#32）と成績ページの記録（#46）
+  - 曲リスト：曲名・よみの自動判定と一括入力、重複・再生できない曲の除外と再生チェック（#28）、曲名で YouTube 検索して追加（#47・#49）、共有リンク・この曲で部屋を建てる（#39）、出題時の曲名補正（#35）
+  - そのほか：XSS 対策（#29）、音量（#30）、遊び方（#31）、OGP 画像・アイコン（#33）、回答判定のゆるめ（#37）、サビ取得の待ち解消（#40）、テストと CI（#26）
 
 - **PR #9**：効果音、回答権のフラッシュ表示、紙吹雪、スコアのアニメーション、スマホ用の大きな早押しボタン、スペースキーでの早押し、回答候補、招待リンク、リロード復帰、再生時間の設定、表彰台と称号、ホーム画面の刷新。
 - **PR #10**：
@@ -126,18 +135,21 @@ rooms/{roomId}      : {
 - ~~ホストがリロードまたは切断すると部屋が消える~~ → PR #22 で解消。切断時は全員「自分の参加情報だけ」を外す（`onDisconnect`）。ホストが8秒（`HOST_GRACE_MS`）戻らなければ、最も早く入室した人がトランザクションでホストを引き継ぐ（`maybeClaimHost`）。通信が戻ったら自分の参加情報を戻す（`rejoinCurrentRoom`）。60秒以上だれもいない部屋は、見ている誰かのブラウザが削除する（`gcEmptyRooms`）。ホストが「解散」を押したときだけ部屋を消す。
 - **Firebase のセキュリティルールは設定済み**だが、`chorusCache` が許可されていない（読み書きとも `permission_denied`）。そのため**サビ開始秒の共有キャッシュは一度も機能していない**（毎回取得し直している。部屋の中では `game/questions/{idx}/chorusAuto` で共有されるので再生自体は動く）。使うなら Firebase コンソールで `chorusCache` の読み書きを許可するルールを追加する。`lists` / `rooms` / `users` は誰でも読み書きできる。
 - YouTube Data API のキーには HTTP リファラー制限がかかっていて、`localhost` からの呼び出しは拒否される（GitHub Pages からは使える）。
-- lemnoslife は非公式 API。2026-10-20 時点で応答がなく（約21秒で接続タイムアウト）、サビは「曲の1/3地点」へのフォールバックになっている。3秒で打ち切るので待ち時間は短い。
-- 曲の上限時間（正解者なしの締め切り）はホストの再生位置で判定する。1問目は各自が音声を解禁したタイミングで始まるので、参加者によって聴ける時間が短くなることがある。
+- lemnoslife は非公式 API。2026-10-20 時点で応答がなく、サビは「曲の1/3地点」へのフォールバック。PR #40 から、通信に失敗したら6時間はその端末で使わない（毎問3秒待たない）。
+- ~~曲の上限時間はホストの再生位置で判定する~~ → PR #38 で、いちばん遅い人の再生位置が上限に届くまで待つ（最大3秒）。
+- **曲名で検索（PR #47）は YouTube Data API の search を使い、1回100ユニット**（1日の上限10,000＝約100回）。上限に達するとその日はプレイリスト取り込み・再生チェックも失敗する。
+- 早押しの判定はプレイヤーが申告する経過時間を使う（改ざんは可能。身内向けの前提）。「部屋から外す」（PR #50）もデータベースのルールでは強制していない。
+- iPhone で「早押しと同時にキーボードが開く」（PR #42・#44）は実機未確認。
 - 自動生成ミックスで取れるのは先頭の数十曲まで（YouTube の仕様）。「高く評価した動画」「後で見る」「マイミックス」は取得できない。
 - Firebase 無料枠（Spark）は同時接続 100 まで。
 - 音楽著作権：身内で遊ぶ分には問題ないが、不特定多数への公開には注意（ユーザーに説明済み）。
 
 ## 8. 今後の改善候補（提案済み・未着手）
 
-- ホスト移譲（ホストが落ちても部屋を続ける）
-- 4択モード、チーム戦、回答権の回数制限
-- ロビーでのチャット・スタンプ、全員の「準備OK」表示
-- 曲リストの複製・統合・並べ替え、JSON でのエクスポート / インポート、再生できない動画の事前チェック
+- ~~ホスト移譲~~（PR #22）、~~4択モード~~（PR #25）、~~スタンプ~~（リアクション PR #27）、~~曲リストの複製・再生できない動画の事前チェック~~（PR #20・#28）
+- チーム戦、回答権の回数制限、全員の「準備OK」表示
+- 曲リストの統合・並べ替え、JSON でのエクスポート / インポート
+- 再生開始のそろえ（今は各端末が読み込めしだい再生。公平さは PR #36・#38 で補っている）
 - 個人の対戦履歴（得意ジャンル、平均の早押し秒数）
 - ライトモード
 - ファイル分割（CSS / JS を別ファイルにする。GitHub Pages のままで可能）
