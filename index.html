@@ -368,6 +368,23 @@
   @keyframes bump { 0%{transform:scale(1);} 40%{transform:scale(1.22); border-color:var(--color-correct); box-shadow:0 0 16px rgba(71,255,178,0.5);} 100%{transform:scale(1);} }
   @keyframes drop { 0%,100%{ background:var(--color-surface); } 40%{ background:rgba(255,71,71,0.35); } }
 
+  /* 曲名の自動判定 */
+  .autoname-modal { max-width:720px; max-height:calc(100vh - 40px); display:flex; flex-direction:column; }
+  .autoname-tools { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; margin-bottom:8px; }
+  .autoname-tools label { display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .autoname-rows { overflow-y:auto; flex:1; min-height:120px; border:1px solid var(--color-border); border-radius:10px; }
+  .autoname-rows .empty-list { border:none; padding:32px; }
+  .autoname-row { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border-bottom:1px solid var(--color-border); }
+  .autoname-row:last-child { border-bottom:none; }
+  .autoname-row > input[type=checkbox] { width:18px; height:18px; margin-top:2px; flex-shrink:0; accent-color:var(--color-accent); }
+  .autoname-body { flex:1; min-width:0; }
+  .autoname-raw { font-size:12px; color:var(--color-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:6px; }
+  .autoname-ch { opacity:.7; }
+  .autoname-fields { display:grid; grid-template-columns:1.2fr 1fr; gap:6px; }
+  .autoname-fields .form-input { padding:8px 10px; font-size:14px; }
+  .autoname-cur { font-size:11px; color:var(--color-muted); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  @media (max-width:560px){ .autoname-fields { grid-template-columns:1fr; } }
+
   /* 招待リンク */
   .invite-btn { margin-top:12px; }
 
@@ -835,7 +852,7 @@
       <div class="form-group">
         <label class="form-label">YouTube URL（1行に1つ）</label>
         <textarea class="form-textarea" id="bulk-urls" rows="5" placeholder="https://www.youtube.com/watch?v=AAA&#10;https://youtu.be/BBB"></textarea>
-        <div class="form-hint">仮の曲として追加されます。正解は後から各曲で編集してください。<br>※プレイリスト/ミックスURLの自動展開は Phase 最終で対応予定。</div>
+        <div class="form-hint">動画タイトルから曲名を自動判定して追加します。違っていたら各曲の ✎ で直してください。<br>プレイリストやミックスのURLは下の「プレイリストから一括取り込み」を使ってください。</div>
       </div>
       <div class="actions-right"><button class="btn-sub" onclick="bulkAddSongs()">一括で追加</button></div>
     </div>
@@ -844,7 +861,7 @@
       <div class="form-group">
         <label class="form-label">プレイリストURL</label>
         <input class="form-input" id="pl-url" type="text" placeholder="https://www.youtube.com/playlist?list=PLxxxxxxxx">
-        <div class="form-hint">通常のプレイリストに加え、YouTubeの自動生成ミックス（list=RD...）やYouTube Musicのプレイリストにも対応。ミックスはYouTubeの仕様上、先頭の数十曲までです。非公開リストや「高く評価した動画」など本人専用のリストは取り込めません。登録済みの曲は自動でスキップします。各曲の正解には動画タイトルが仮入力されるので、後から調整してください。</div>
+        <div class="form-hint">通常のプレイリストに加え、YouTubeの自動生成ミックス（list=RD...）やYouTube Musicのプレイリストにも対応。ミックスはYouTubeの仕様上、先頭の数十曲までです。非公開リストや「高く評価した動画」など本人専用のリストは取り込めません。登録済みの曲は自動でスキップします。各曲の正解には、動画タイトルとチャンネル名から自動判定した曲名が入ります（例：「ヒグチアイ / 悪魔の子 (アニメスペシャルVer.) | …」→「悪魔の子」）。一覧には元の動画タイトルが表示されるので、違っていたら ✎ で直してください。</div>
       </div>
       <div class="form-group">
         <label class="form-label">ジャンル（取り込む全曲に適用）</label>
@@ -858,6 +875,7 @@
     </div>
     <div style="display:flex; align-items:center; justify-content:space-between; margin:24px 0 12px;">
       <div style="font-size:13px; color:var(--color-muted);" id="detail-song-count">0 曲</div>
+      <button class="btn-sub" id="detail-autoname" onclick="openAutoname()" style="padding:8px 14px; font-size:13px;" title="動画タイトルから曲名を判定して、正解をまとめて整えます">🪄 曲名を自動判定</button>
     </div>
     <div id="detail-songs"></div>
   </div>
@@ -923,6 +941,20 @@
     </div>
     <div class="form-group"><label class="form-label">サビ開始秒（任意・空欄で自動検出）</label><input class="form-input" id="edit-song-chorus" type="number" min="0" placeholder="例: 45"></div>
     <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('edit-song-modal')">キャンセル</button><button class="btn-go" onclick="saveSongEdit()">保存</button></div>
+  </div>
+</div>
+
+<!-- モーダル：曲名の自動判定 -->
+<div class="modal-overlay" id="autoname-modal">
+  <div class="modal autoname-modal">
+    <div class="modal-title">🪄 曲名の自動判定</div>
+    <div class="modal-text">動画タイトルとチャンネル名から曲名を推定しました。チェックした曲の「正解」を書き換えます（手で追加した別の表記は残ります）。曲名の欄は直接修正できます。</div>
+    <div class="autoname-tools">
+      <label><input type="checkbox" id="autoname-all" onchange="toggleAutonameAll(this.checked)"> すべて選択</label>
+      <span id="autoname-count"></span>
+    </div>
+    <div class="autoname-rows" id="autoname-rows"></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeModal('autoname-modal')">キャンセル</button><button class="btn-go" id="autoname-apply" onclick="applyAutoname()">選んだ曲に反映</button></div>
   </div>
 </div>
 
@@ -1100,6 +1132,7 @@ function openListDetail(id){
   document.getElementById('bulk-card').style.display=editable?'':'none';
   document.getElementById('playlist-card').style.display=editable?'':'none';
   document.getElementById('detail-delete-list').style.display=editable?'':'none';
+  document.getElementById('detail-autoname').style.display=editable?'':'none';
   resetSongForm(); renderDetailSongs(); showPage('list-detail');
 }
 function resetSongForm(){
@@ -1133,17 +1166,287 @@ function addSong(){
   list.songs.push({ id:genUuid(), addedByUuid:u.uuid, addedByName:u.name, url, videoId, answers, yomigana, title:title||answers[0], genre, chorusStart, createdAt:Date.now() });
   saveListToCloud(list).then(()=>{ resetSongForm(); showToast('曲を追加しました','success'); });
 }
-function bulkAddSongs(){
+// 動画タイトルから曲を作る。正解は自動判定した曲名（＋英語表記などの別解）、表示タイトルは元の動画タイトル
+function songFromVideo(vid, title, channel, genre, u){
+  const g=guessSongName(title, channel);
+  return {
+    id:genUuid(), addedByUuid:u.uuid, addedByName:u.name,
+    url:`https://www.youtube.com/watch?v=${vid}`, videoId:vid,
+    answers:[g.song||title, ...g.alts], yomigana:[], title, genre:genre||'', createdAt:Date.now()
+  };
+}
+async function bulkAddSongs(){
   const list=getList(currentListId); if(!list) return;
   const lines=document.getElementById('bulk-urls').value.split('\n').map(s=>s.trim()).filter(Boolean);
   if(lines.length===0){ showToast('URLを入力してください','error'); return; }
-  const u=getUser(); let ok=0,ng=0; list.songs=list.songs||[];
-  for(const url of lines){
-    const videoId=extractVideoId(url); if(!videoId){ ng++; continue; }
-    list.songs.push({ id:genUuid(), addedByUuid:u.uuid, addedByName:u.name, url, videoId, answers:['（未設定）'], yomigana:[], title:'（要編集）'+videoId, genre:'', createdAt:Date.now() });
-    ok++;
+  const u=getUser(); let ng=0; list.songs=list.songs||[];
+  const ids=[];
+  for(const url of lines){ const videoId=extractVideoId(url); if(!videoId){ ng++; continue; } if(!ids.includes(videoId)) ids.push(videoId); }
+  // 動画タイトルを取得して曲名を自動判定（取得できなければ従来どおり仮の曲として追加）
+  let meta={};
+  try{ (await fetchVideoEntries(ids)).forEach(e=>meta[e.vid]=e); }catch(e){ meta=null; }
+  for(const videoId of ids){
+    const m=meta&&meta[videoId];
+    if(m && m.title) list.songs.push(songFromVideo(videoId, m.title, m.channel, '', u));
+    else list.songs.push({ id:genUuid(), addedByUuid:u.uuid, addedByName:u.name, url:`https://www.youtube.com/watch?v=${videoId}`, videoId, answers:['（未設定）'], yomigana:[], title:'（要編集）'+videoId, genre:'', createdAt:Date.now() });
   }
-  saveListToCloud(list).then(()=>{ document.getElementById('bulk-urls').value=''; showToast(`${ok}曲追加${ng?` / ${ng}件は無効URL`:''}`, ok?'success':'error'); });
+  const ok=ids.length;
+  saveListToCloud(list).then(()=>{
+    document.getElementById('bulk-urls').value='';
+    const note=meta?'。曲名は自動判定しています':'（動画情報を取得できなかったため、正解は後から編集してください）';
+    showToast(`${ok}曲追加${ng?` / ${ng}件は無効URL`:''}${ok?note:''}`, ok?'success':'error');
+  });
+}
+
+// ===== 既存の曲をまとめて自動判定（プレビューで確認・修正してから反映） =====
+let autonameRows=[];
+async function openAutoname(){
+  const list=getList(currentListId); if(!list) return;
+  const songs=list.songs||[];
+  if(!songs.length){ showToast('曲がありません','error'); return; }
+  const rowsEl=document.getElementById('autoname-rows');
+  rowsEl.innerHTML='<div class="empty-list">YouTubeから動画の情報を取得中...</div>';
+  document.getElementById('autoname-apply').disabled=true;
+  autonameRows=[];
+  openModal('autoname-modal');
+  // チャンネル名が判定の手がかりになるので、全曲の動画情報を取り直す（50曲ずつ）
+  let meta={}, metaOk=true;
+  try{ (await fetchVideoEntries([...new Set(songs.map(s=>s.videoId))])).forEach(e=>meta[e.vid]=e); }catch(e){ metaOk=false; }
+  for(const s of songs){
+    const m=meta[s.videoId];
+    const raw=(m&&m.title) || (/^（要編集）/.test(s.title||'')?'':s.title) || '';
+    if(!raw) continue;
+    const g=guessSongName(raw, m&&m.channel);
+    if(!g.song) continue;
+    const cur=(s.answers||[])[0]||'';
+    const already=songKey(cur)===songKey(g.song) && g.alts.every(a=>(s.answers||[]).some(x=>songKey(x)===songKey(a)));
+    if(already) continue;
+    // 正解が動画タイトルのまま・未設定の曲は最初からチェック。手で直したらしい曲はチェックしない
+    const looksAuto=!cur || cur==='（未設定）' || cur===raw || cur===s.title;
+    autonameRows.push({ songId:s.id, raw, channel:(m&&m.channel)||'', cur, song:g.song, alts:g.alts, checked:looksAuto });
+  }
+  renderAutonameRows(metaOk);
+}
+function renderAutonameRows(metaOk){
+  const el=document.getElementById('autoname-rows');
+  const note=metaOk?'':'<div class="form-hint" style="margin-bottom:8px;">※ YouTubeの情報を取得できなかったため、登録済みのタイトルだけで判定しています。</div>';
+  if(!autonameRows.length){ el.innerHTML=note+'<div class="empty-list">変更が必要な曲はありません</div>'; document.getElementById('autoname-apply').disabled=true; updateAutonameCount(); return; }
+  el.innerHTML=note+autonameRows.map((r,i)=>`
+    <div class="autoname-row">
+      <input type="checkbox" class="autoname-check" ${r.checked?'checked':''} onchange="autonameRows[${i}].checked=this.checked; updateAutonameCount()">
+      <div class="autoname-body">
+        <div class="autoname-raw" title="${escAttr(r.raw)}">${escHtml(r.raw)}${r.channel?`<span class="autoname-ch">／${escHtml(r.channel)}</span>`:''}</div>
+        <div class="autoname-fields">
+          <input class="form-input autoname-song" type="text" value="${escAttr(r.song)}" placeholder="曲名" oninput="autonameRows[${i}].song=this.value">
+          <input class="form-input autoname-alts" type="text" value="${escAttr(r.alts.join(' / '))}" placeholder="別の表記（/ 区切り・任意）" oninput="autonameRows[${i}].alts=this.value.split(/\\s+\\/\\s+|／/).map(x=>x.trim()).filter(Boolean)">
+        </div>
+        <div class="autoname-cur">現在の正解：${escHtml(r.cur||'（なし）')}</div>
+      </div>
+    </div>`).join('');
+  updateAutonameCount();
+}
+function updateAutonameCount(){
+  const n=autonameRows.filter(r=>r.checked).length;
+  document.getElementById('autoname-count').textContent=`${autonameRows.length}曲中 ${n}曲を反映`;
+  document.getElementById('autoname-all').checked=autonameRows.length>0 && n===autonameRows.length;
+  document.getElementById('autoname-apply').disabled=n===0;
+}
+function toggleAutonameAll(on){
+  autonameRows.forEach(r=>r.checked=on);
+  document.querySelectorAll('#autoname-rows .autoname-check').forEach(c=>c.checked=on);
+  updateAutonameCount();
+}
+function applyAutoname(){
+  const list=getList(currentListId); if(!list) return;
+  let n=0;
+  for(const r of autonameRows){
+    if(!r.checked || !r.song.trim()) continue;
+    const s=(list.songs||[]).find(x=>x.id===r.songId); if(!s) continue;
+    // 動画タイトルそのもの・未設定の正解は置き換え、手で足した別解は残す
+    const keep=(s.answers||[]).filter(a=>a!=='（未設定）' && a!==r.raw && a!==s.title);
+    const next=[];
+    [r.song.trim(), ...r.alts, ...keep].forEach(a=>{ if(a && !next.some(x=>songKey(x)===songKey(a))) next.push(a); });
+    s.answers=next;
+    if(/^（要編集）/.test(s.title||'')) s.title=r.raw;
+    n++;
+  }
+  if(!n) return;
+  saveListToCloud(list).then(()=>{ closeModal('autoname-modal'); showToast(`${n}曲の曲名を更新しました`,'success'); });
+}
+// ===== 曲名の自動判定（YouTubeの動画タイトル＋チャンネル名から推定） =====
+// 例：「ヒグチアイ / 悪魔の子 (アニメスペシャルVer.) | Ai Higuchi “Akuma no Ko” Anime Special Ver.」（チャンネル：ヒグチアイ）
+//   → 曲名「悪魔の子」、別解「Akuma no Ko」
+// 飾りの語（MV・Official Video・Ver. など）。括弧の中身や区切られた部分がこれだけなら捨てる
+const SONG_NOISE_RE=/official|music|video|\bm\/?v\b|\bpv\b|clip|lyrics?|audio|visuali[sz]er|\bver\b\.?|version|remaster(ed)?|\blive\b|\bfull\b|\bshort\b|\btv\b|\bsize\b|4k|\bhd\b|\bhq\b|\d{3,4}p|teaser|trailer|preview|movie|first take|home take|\bfrom\b|anime|\bop\b|\bed\b|opening|ending|special|edition|collaboration|\bsub(bed|s)?\b|\beng\b|creditless|non-?credit|karaoke|instrumental|\binst\b|off vocal|cover(ed)?|remix|\bmix\b|\bedit\b|\bmad\b|\bamv\b|nightcore|slowed|sped up|season|歌詞|公式|字幕|映像|ミュージック|オリジナル|original|フル|ショート|サイズ|ライブ|アニメ|オープニング|エンディング|主題歌|テーマ|ノンクレジット|スペシャル|カバー|コラボ|てみた|カラオケ|付き|付|高音質|第\d+(期|クール|話|弾)|クール/gi;
+const VOCALOID_RE=/初音ミク|鏡音リン|鏡音レン|巡音ルカ|\bMEIKO\b|\bKAITO\b|\bGUMI\b|\bIA\b|可不|重音テト|\bflower\b|結月ゆかり|東北きりたん|星界|裏命|歌愛ユキ|音街ウナ|ずんだもん|琴葉茜|琴葉葵|小春六花|知声|足立レイ/i;
+const COVER_MARK_RE=/covered by|cover(ed)?|カバー|歌ってみた|歌った|うたった|弾いてみた|叩いてみた|踊ってみた/i;
+function songKey(s){ return String(s||'').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu,''); }
+function isNoisePart(s){ return songKey(String(s||'').replace(SONG_NOISE_RE,' ')).length===0; }
+function stripFeat(s){ return String(s).replace(/\s*[\(（]?\s*(feat\.?|ft\.|featuring|prod\.?|produced by)\s.*$/i,'').replace(/\s*(feat\.|ft\.)\S.*$/i,'').trim(); }
+function hasLatin(s){ return /[A-Za-z]/.test(String(s).normalize('NFKC')); }
+function hasJapanese(s){ return /[\u3040-\u30ff\u3400-\u9fff]/.test(String(s)); }
+// 先頭・末尾の飾りを取り除いて整える
+// 括弧から外した「カバー」「歌手名」の位置に付ける目印（私用領域の文字。表示には残さない）
+const SONG_MARK=String.fromCharCode(0xE000);
+// 対になっていない括弧を先頭・末尾から外す（「ゆらゆら -運命の花-」や Don't say "lazy" はそのまま）
+function trimUnpaired(t){
+  for(const [o,c] of [['「','」'],['『','』'],['(',')'],['（','）'],['【','】'],['[',']'],['｢','｣'],['“','”']]){
+    if(t.endsWith(c) && !t.includes(o)) t=t.slice(0,-1).trim();
+    if(t.startsWith(o) && !t.includes(c)) t=t.slice(1).trim();
+  }
+  return t;
+}
+function tidySong(s){
+  let t=String(s||'').split(SONG_MARK).join('').replace(/#\S+/g,' ').replace(/\s+/g,' ').trim();
+  for(let i=0;i<5;i++){
+    const before=t;
+    t=t.replace(/^(MV|PV|M\/V)\s*[:：]?\s*/i,'')
+       .replace(/\s+(official\s+)?(music\s+video|lyric\s+video|music\s+clip|full\s+ver\.?|tv\s*size)\s*$/i,'')
+       .replace(/\s*(ミュージックビデオ|ビデオクリップ|歌詞付き|公式)\s*$/,'')
+       .replace(/\s+[Bb]y\s+[A-Z][\w.'-]*\s+[A-Z][\w.'-]*$/,'')         // 「Memories By Maki Otsuki」の歌手部分
+       .replace(/^[^\p{L}\p{N}「『“"'(（\[【｢]+(?=[\p{L}\p{N}])/u,'')     // 先頭の絵文字・記号
+       .replace(/\s+[-–—:：|｜／\/~～×]+$/,'').replace(/^[-–—:：|｜／\/~～]+\s+/,'') // 区切り記号の取り残し
+       .trim();
+    t=trimUnpaired(t);
+    // 末尾の飾り語（MV・Official・cover など）と記号だけの語
+    const toks=t.split(' ');
+    while(toks.length>1 && (/^(mv|pv|m\/v|official|video|audio|lyrics?|full|ver\.?|version|hd|hq|4k|collaboration|clip|cover(ed)?)$/i.test(toks[toks.length-1]) || !songKey(toks[toks.length-1]))) toks.pop();
+    t=toks.join(' ');
+    if(t===before) break;
+  }
+  return t;
+}
+// 「」『』｢｣“”"" '' の中身を候補に。アニメ・映画名など作品名の括弧は除く
+function quotedSongCandidates(s){
+  const out=[]; const re=/「([^」]+)」|『([^』]+)』|｢([^｣]+)｣|“([^”]+)”|"([^"]+)"|(?:^|\s)'([^']+)'(?=\s|$)/g; let m;
+  while((m=re.exec(s))){
+    const c=(m[1]||m[2]||m[3]||m[4]||m[5]||m[6]).trim(); if(!c || isNoisePart(c)) continue;
+    const start=m.index+(m[0].length-m[0].trimStart().length), end=m.index+m[0].length;
+    const before=s.slice(Math.max(0,start-12), start), after=s.slice(end, end+16);
+    const songBefore=/(主題歌|テーマ|ソング|\bOP|\bED|オープニング|エンディング|挿入歌|新曲|シングル|楽曲|収録曲)\s*$/i.test(before);
+    const workBefore=/(アニメ|anime|映画|ドラマ|劇場|ゲーム|番組|CM|TV|テレビ|アルバム|album|作品|シリーズ|舞台|ミュージカル)[^「『｢“"]{0,3}$|×\s*$/i.test(before);
+    const workAfter=/^[^「『｢“"]{0,12}?(\bOP\b|\bED\b|オープニング|エンディング|主題歌|テーマ|挿入歌|イメージソング|タイアップ|収録)/i.test(after);
+    out.push({ text:c, start, end, work:!songBefore && (workBefore||workAfter) });
+  }
+  return out;
+}
+// 「/」「 - 」「：」「 , 」全角スペース・連続スペース、日本語→英字の切り替わりで区切る（「1/3」は区切らない）
+function splitTitleParts(s){
+  const parts=[]; const re=/\s+[-–—―]\s+|\s*[\/／]\s*|\s*：\s*|\s+:\s+|\s+,\s+|\s*　\s*|\s{2,}|([\u3040-\u30ff\u3400-\u9fff！？。])\s+(?!(feat|ft|prod|with|by|covered|cover|vo)\b)(?=[A-Za-z])/gi; let last=0, m, sep='';
+  while((m=re.exec(s))){
+    // 正規表現の後読みは古いSafariで構文エラーになるため、手前の1文字ごとマッチさせて位置をずらす
+    const lead=m[1]?m[1].length:0, at=m.index+lead, sepStr=m[0].slice(lead);
+    if(/[\/／]/.test(sepStr) && /\d$/.test(s.slice(0,at)) && /^\d/.test(s.slice(m.index+m[0].length))) continue;
+    parts.push({ text:s.slice(last,at), sep });
+    sep=/[\/／]/.test(sepStr)?'/':(/^\s+$/.test(sepStr)||sepStr.includes('　'))?'sp':'-';
+    last=m.index+m[0].length;
+  }
+  parts.push({ text:s.slice(last), sep });
+  return parts.filter(p=>p.text.trim());
+}
+function guessSongName(rawTitle, channelTitle){
+  const raw=String(rawTitle||'').trim();
+  if(!raw) return { song:'', alts:[] };
+  const ch=String(channelTitle||'');
+  const isTopic=/\s-\s*topic\s*$/i.test(ch);   // YouTube Musicの自動生成チャンネル：タイトル＝曲名
+  // チャンネル名（「ヨルシカ / n-buna Official」のような併記は分けて照合）
+  const chKeys=ch.replace(/\s*-\s*topic\s*$/i,'').split(/\s+[-\/／]\s+|[\/／,、|｜【】]|\s{2,}/)
+    .map(x=>songKey(x.replace(/official|公式|オフィシャル|channel|ちゃんねる|チャンネル|youtube|vevo|staff|スタッフ/gi,''))).filter(k=>k.length>=2);
+  const chMatch=(k)=>{ let sc=0; for(const c of chKeys){ if(k===c) sc=Math.max(sc,4); else if(k.includes(c)) sc=Math.max(sc,3); else if(k.length>=3 && c.includes(k)) sc=Math.max(sc,2); } return sc; };
+  let labelHint=false;  // 【初音ミク】などボカロ・歌ってみた系のラベルがある →「曲名 / 歌手」の流儀
+  const songFirstRaw=/歌ってみた|弾いてみた|cover|カバー|オリジナル曲|オリジナル/i.test(raw);
+  const core=(text, opts)=>{
+    let s=text; const res={ song:'', paren:null, others:[], artistFound:false };
+    // 引用符の中を最優先（YouTube Musicの自動生成は曲名そのものなので使わない）
+    const qs=opts.topic?[]:quotedSongCandidates(s); const q=qs.find(x=>!x.work);
+    if(q){ res.song=tidySong(stripFeat(q.text)); return res; }
+    for(const w of qs.slice().reverse()) s=s.slice(0,w.start)+' '+s.slice(w.end);   // 作品名の括弧は取り除く
+    // 【】[]《》〔〕 はラベルなので取り除く（全部消えたら中身を使う）
+    const labels=[]; s=s.replace(/【([^】]*)】|\[([^\]]*)\]|［([^］]*)］|《([^》]*)》|〔([^〕]*)〕/g,(m0,a,b,c,d,e)=>{ labels.push(a||b||c||d||e||''); return ' '; });
+    if(labels.some(l=>VOCALOID_RE.test(l)||COVER_MARK_RE.test(l))) labelHint=true;
+    if(!songKey(s)){ const l=labels.find(x=>!isNoisePart(x)); s=l||''; }
+    // 丸括弧：飾りなら捨て、それ以外で末尾のものは別名候補に。
+    // 「バルーン(cover)」「After the Rain（そらる×まふまふ）」は直前が歌手名なので目印を付ける
+    s=s.replace(/\s*[\(（]([^()（）]*)[\)）]/g,(m0,c,off,str)=>{
+      if(COVER_MARK_RE.test(c)) return SONG_MARK+' ';
+      if(isNoisePart(c) || /feat|ft\.|prod|(19|20)\d\d/i.test(c)) return ' ';
+      const rest=str.slice(off+m0.length);
+      if(!rest.trim() || /^\s*(feat\.?|ft\.)/i.test(rest)){
+        if(chMatch(songKey(c))>=2 || /×|&|、/.test(c)) return SONG_MARK+' ';
+        if(!res.paren) res.paren=c.trim(); return ' ';
+      }
+      return m0;
+    });
+    // 「を歌ってみた」「 歌ってみたのは○○」以降を落とす（前に何か残る場合のみ）
+    s=s.replace(/\s*を?(歌ってみた|歌った|うたった|弾いてみた|叩いてみた|踊ってみた).*$/,(m0,mk,off)=>songKey(s.slice(0,off))?' ':m0);
+    // 末尾の「 -TV size-」「 -インヴォーク-」のような飾り・読み
+    s=s.replace(/\s+[-－‐]([^-－‐]{1,40})[-－‐]\s*$/,(m0,c)=>{ if(!isNoisePart(c) && !res.paren) res.paren=c.trim(); return ' '; });
+    if(opts.topic){ res.song=s.split(SONG_MARK).join('').replace(/\s+/g,' ').trim(); return res; }  // 引用符などはそのまま残す
+    if(!opts.split){ res.song=tidySong(stripFeat(s)); return res; }
+    const parts=splitTitleParts(s.trim()).map(p=>({ ...p, text:p.text.trim() })).filter(p=>!isNoisePart(p.text));
+    if(parts.length===0) return res;
+    if(parts.length===1){ res.song=tidySong(stripFeat(parts[0].text)); return res; }
+    // 歌手らしさを点数化（チャンネル名と一致・feat.・covered by・ボカロ名・2回出てくる名前など）
+    const keyCount={}; parts.forEach(p=>{ const k=songKey(stripFeat(p.text)); keyCount[k]=(keyCount[k]||0)+1; });
+    parts.forEach((p,i)=>{
+      const base=tidySong(stripFeat(p.text)), k=songKey(base);
+      let sc=chMatch(k);
+      if(!k || /^(with|&|×|x)\s/i.test(p.text)) sc+=2;                 // 「feat.初音ミク」「with t.komuro」だけの部分
+      if(p.text.includes(SONG_MARK)) sc+=2;
+      if(/(\bOP|\bED|opening|ending|主題歌|オープニング|エンディング)\s*\d*$/i.test(p.text)) sc+=2;  // 「デジモンテイマーズOP」は作品名
+      if(COVER_MARK_RE.test(p.text) || /vo\.|作詞|作曲|編曲/i.test(p.text)) sc+=2;
+      if(VOCALOID_RE.test(base)) sc+=2;
+      if(keyCount[k]>=2) sc+=2;
+      const sepNear=(p.sep||(parts[i+1]&&parts[i+1].sep)||'');
+      if(base!==p.text.trim() && sepNear==='/') sc+=2;     // 「曲名 / ○○P feat.初音ミク」の後ろ側
+      if(/[\u3040-\u30ff\u3400-\u9fff]P$/.test(base)) sc+=1; // ○○P（ボカロP）
+      if(/\s[x×]\s|×|\s&\s|\swith\s/i.test(base)) sc+=1;    // コラボ表記
+      p.score=sc; p.idx=i;
+    });
+    const artists=parts.filter(p=>p.score>=2);
+    res.artistFound=artists.length>0;
+    let rest=parts.filter(p=>p.score<2);
+    if(rest.length===0) rest=[parts.reduce((a,b)=>b.score<a.score?b:a)];
+    // 日本語と英語の併記（「米津玄師 - 毎日　Kenshi Yonezu - Mainichi」など）は日本語側を曲名に
+    const jp=rest.filter(p=>hasJapanese(p.text)), en=rest.filter(p=>!hasJapanese(p.text));
+    const allSp=rest.slice(1).every(p=>p.sep==='sp');
+    if(jp.length && en.length && (res.artistFound || rest.length>=3 || allSp)){ if(res.artistFound) res.others=en.map(p=>p.text); rest=jp; }
+    let pick;
+    if(rest.length===1) pick=rest[0];
+    else {
+      const min=Math.min(...rest.map(p=>p.score)); const low=rest.filter(p=>p.score===min);
+      if(low.length===1) pick=low[0];
+      else if(res.artistFound){
+        // 歌手の直後（なければ直前）を曲名とみなす。「米津玄師  Kenshi Yonezu」のようにスペースだけで続く部分は歌手名の続きとみて飛ばす
+        const a=artists[0].idx;
+        pick=low.find(p=>p.idx>a && p.sep!=='sp') || low.find(p=>p.idx>a) || low.slice().reverse().find(p=>p.idx<a) || low[0];
+      } else {
+        const songFirst=songFirstRaw || labelHint;
+        pick=(low[1].sep==='sp') ? low[0] : (songFirst ? low[0] : low[1]);  // 同点なら「歌手 - 曲名」「歌手 / 曲名」の順とみなす
+      }
+    }
+    res.song=tidySong(stripFeat(pick.text));
+    return res;
+  };
+  const pipeParts=raw.split(/\s+[|｜]\s*|\s*[|｜]\s+|｜/).filter(x=>x.trim());
+  let res=core(pipeParts[0]||raw, { split:!isTopic, topic:isTopic });
+  // 「Omoinotake | 幾億光年」のように前半が歌手名だけなら後半を使う
+  if((!res.song || chMatch(songKey(res.song))>=3) && pipeParts.length>1){
+    for(const p of pipeParts.slice(1)){ const r=core(p, { split:true }); if(r.song && !isNoisePart(r.song)){ res=r; break; } }
+  }
+  const song=res.song || tidySong(raw) || raw;
+  // 別名は文字の種類が曲名と違うもの（ローマ字・英語表記など）だけ採用。歌手名やボカロ名は除く
+  const alts=[];
+  const addAlt=(a)=>{
+    a=tidySong(stripFeat(a||'')); if(!a || isNoisePart(a)) return;
+    const k=songKey(a); if(!k || k===songKey(song) || chMatch(k)>=2 || VOCALOID_RE.test(a)) return;
+    if(hasJapanese(song)===hasJapanese(a)) return;
+    if(!alts.some(x=>songKey(x)===k)) alts.push(a);
+  };
+  if(res.paren) addAlt(res.paren);
+  res.others.forEach(addAlt);
+  for(const p of pipeParts.slice(1)){ const r=core(p, { split:true }); if(r.song) addAlt(r.song); }
+  return { song, alts:alts.slice(0,2) };
 }
 function extractPlaylistId(url){
   const m=url.match(/[?&]list=([A-Za-z0-9_-]+)/);
@@ -1208,7 +1511,7 @@ async function fetchVideoEntries(ids){
     const data=await res.json();
     if(data.error) throw new Error(data.error.message||'APIエラー');
     const map={}; (data.items||[]).forEach(v=>map[v.id]=v);
-    chunk.forEach(id=>{ const v=map[id]; if(v) out.push({ vid:id, title:v.snippet&&v.snippet.title, embeddable:!(v.status&&v.status.embeddable===false) }); });
+    chunk.forEach(id=>{ const v=map[id]; if(v) out.push({ vid:id, title:v.snippet&&v.snippet.title, channel:(v.snippet&&v.snippet.channelTitle)||'', embeddable:!(v.status&&v.status.embeddable===false) }); });
   }
   return out;
 }
@@ -1227,7 +1530,7 @@ async function importPlaylist(){
     let entries=[];
     try{
       const items=await fetchAllPlaylistItems(pid);
-      entries=items.map(it=>({ vid:it.snippet&&it.snippet.resourceId&&it.snippet.resourceId.videoId, title:it.snippet&&it.snippet.title, embeddable:true }));
+      entries=items.map(it=>({ vid:it.snippet&&it.snippet.resourceId&&it.snippet.resourceId.videoId, title:it.snippet&&it.snippet.title, channel:(it.snippet&&it.snippet.videoOwnerChannelTitle)||'', embeddable:true }));
     }catch(e){ entries=[]; }
     // 2) 取れなければ（自動生成ミックス等）プレーヤー経由で取得
     let viaPlayer=false;
@@ -1249,17 +1552,13 @@ async function importPlaylist(){
       if(!vid || !title || title==='Deleted video' || title==='Private video' || !it.embeddable){ skipped++; continue; }
       if(existing.has(vid)){ dup++; continue; }
       existing.add(vid);
-      list.songs.push({
-        id:genUuid(), addedByUuid:u.uuid, addedByName:u.name,
-        url:`https://www.youtube.com/watch?v=${vid}`, videoId:vid,
-        answers:[title], yomigana:[], title, genre, createdAt:Date.now()
-      });
+      list.songs.push(songFromVideo(vid, title, it.channel, genre, u));
       added++;
     }
     await saveListToCloud(list);
     document.getElementById('pl-url').value='';
     const notes=[]; if(dup) notes.push(`${dup}曲は登録済み`); if(skipped) notes.push(`${skipped}件は再生不可などで除外`);
-    showToast(`${viaPlayer?'自動生成リストから':''}${added}曲を取り込みました${notes.length?`（${notes.join('、')}）`:''}`,'success');
+    showToast(`${viaPlayer?'自動生成リストから':''}${added}曲を取り込みました${notes.length?`（${notes.join('、')}）`:''}。曲名は自動判定しています`,'success');
   }catch(e){
     showToast('取り込み失敗: '+(e.message||e),'error');
   } finally {
