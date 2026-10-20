@@ -2058,54 +2058,79 @@ async function bulkAddSongs(){
 const KUROMOJI_JS='https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js';
 const KUROMOJI_DICT='https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/';
 const KANJI_RE=/[㐀-鿿豈-﫿々〆]/;
-let yomiTokenizer=null, yomiTokenizerPromise=null;
+// 辞書（圧縮で約18MB）の展開・構築はとても重く、画面と同じスレッドで行うと端末によっては
+// 数十秒〜数分ページが固まる。Web Worker（画面とは別のスレッド）で行い、結果だけを受け取る
+const YOMI_WORKER_SRC=[
+  "importScripts('"+KUROMOJI_JS+"');",
+  "var tk=null;",
+  "kuromoji.builder({ dicPath:'"+KUROMOJI_DICT+"' }).build(function(err,t){ if(err){ postMessage({ type:'error', message:String(err) }); return; } tk=t; postMessage({ type:'ready' }); });",
+  "onmessage=function(e){ var d=e.data; try{ postMessage({ type:'result', id:d.id, tokens:d.texts.map(function(s){ return s ? tk.tokenize(s).map(function(x){ return [x.surface_form, x.reading||'']; }) : []; }) }); }catch(err){ postMessage({ type:'result', id:d.id, error:String(err) }); } };"
+].join('\n');
+const YOMI_LOAD_TIMEOUT_MS=180000;
+let yomiWorker=null, yomiReady=false, yomiLoadPromise=null, yomiReqId=0; const yomiPending={};
 function loadYomiTokenizer(){
-  if(yomiTokenizer) return Promise.resolve(yomiTokenizer);
-  if(yomiTokenizerPromise) return yomiTokenizerPromise;
-  yomiTokenizerPromise=new Promise((resolve,reject)=>{
-    const build=()=>{
-      try{ window.kuromoji.builder({ dicPath:KUROMOJI_DICT }).build((err,tk)=>{ if(err) reject(err); else { yomiTokenizer=tk; resolve(tk); } }); }
-      catch(e){ reject(e); }
+  if(yomiReady) return Promise.resolve(true);
+  if(yomiLoadPromise) return yomiLoadPromise;
+  yomiLoadPromise=new Promise((resolve,reject)=>{
+    let w;
+    try{ w=new Worker(URL.createObjectURL(new Blob([YOMI_WORKER_SRC],{ type:'text/javascript' }))); }
+    catch(e){ reject(new Error('この端末ではよみがなの自動入力を使えません')); return; }
+    const fail=(msg)=>{ clearTimeout(timer); try{ w.terminate(); }catch(_){ } reject(new Error(msg)); };
+    const timer=setTimeout(()=>fail('辞書の読み込みに時間がかかりすぎました'), YOMI_LOAD_TIMEOUT_MS);
+    w.onmessage=(e)=>{
+      const d=e.data||{};
+      if(d.type==='ready'){ clearTimeout(timer); yomiWorker=w; yomiReady=true; resolve(true); }
+      else if(d.type==='error') fail(d.message||'辞書を読み込めませんでした');
+      else if(d.type==='result'){ const q=yomiPending[d.id]; if(q){ delete yomiPending[d.id]; if(d.error) q.reject(new Error(d.error)); else q.resolve(d.tokens); } }
     };
-    if(window.kuromoji) return build();
-    const sc=document.createElement('script'); sc.src=KUROMOJI_JS; sc.async=true;
-    sc.onload=build; sc.onerror=()=>reject(new Error('よみがなの辞書を読み込めませんでした'));
-    document.head.appendChild(sc);
+    w.onerror=()=>fail('辞書を読み込めませんでした');
   });
-  yomiTokenizerPromise.catch(()=>{ yomiTokenizerPromise=null; });  // 失敗したら次回やり直せるように
-  return yomiTokenizerPromise;
+  yomiLoadPromise.catch(()=>{ yomiLoadPromise=null; });  // 失敗したら次回やり直せるように
+  return yomiLoadPromise;
 }
 function kataToHira(s){ return String(s).replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-96)); }
-// 漢字を含む曲名の読み（ひらがな）。辞書が未読込・漢字なし・読めない漢字がある場合は空文字
-function readingOf(text){
-  const t=String(text||'').normalize('NFKC');
-  if(!yomiTokenizer || !KANJI_RE.test(t)) return '';
-  let ok=true;
-  const r=yomiTokenizer.tokenize(t).map(x=>{
-    if(!KANJI_RE.test(x.surface_form)) return x.surface_form;
-    if(!x.reading || x.reading==='*'){ ok=false; return ''; }
-    return x.reading;
-  }).join('');
-  return ok?kataToHira(r):'';
+// 漢字を含む曲名の読み（ひらがな）をまとめて調べる。漢字なし・読めない漢字がある場合は空文字
+async function readingsOf(texts){
+  const src=(texts||[]).map(t=>String(t||'').normalize('NFKC'));
+  const need=src.map(t=>KANJI_RE.test(t));
+  if(!need.some(Boolean)) return src.map(()=>'');
+  await loadYomiTokenizer();
+  const id=++yomiReqId;
+  const tokens=await new Promise((resolve,reject)=>{ yomiPending[id]={ resolve, reject }; yomiWorker.postMessage({ id, texts:src.map((t,i)=>need[i]?t:'') }); });
+  return tokens.map((toks,i)=>{
+    if(!need[i]) return '';
+    let ok=true;
+    const r=toks.map(([surface, reading])=>{
+      if(!KANJI_RE.test(surface)) return surface;
+      if(!reading || reading==='*'){ ok=false; return ''; }
+      return reading;
+    }).join('');
+    return ok?kataToHira(r):'';
+  });
 }
+async function readingOf(text){ return (await readingsOf([text]))[0]; }
 function needsYomi(s){ return KANJI_RE.test((s.answers||[])[0]||'') && !(s.yomigana||[]).length; }
 // 追加した曲によみがなを付けて保存（辞書の読み込みに時間がかかるので、曲を保存した後に裏で行う）
 async function fillYomiganaLater(listId, songIds){
   const ids=new Set(songIds);
   const first=getList(listId); if(!first || !(first.songs||[]).some(s=>ids.has(s.id) && needsYomi(s))) return;
   const conn=navigator.connection;
-  if(!yomiTokenizer && conn && (conn.saveData || /(^|-)(2g|3g)$/.test(conn.effectiveType||''))){
+  if(!yomiReady && conn && (conn.saveData || /(^|-)(2g|3g)$/.test(conn.effectiveType||''))){
     showToast('通信量を抑えるため、よみがなは自動で付けませんでした。「曲名・よみを自動入力」から付けられます'); return;
   }
   try{
-    if(!yomiTokenizer) showToast('よみがなを付けています…（初回は辞書の読み込みに少し時間がかかります）');
+    if(!yomiReady) showToast('よみがなを付けています…（初回は辞書の読み込みに少し時間がかかります）');
     await loadYomiTokenizer();
   }catch(e){ showToast('よみがなの辞書を読み込めませんでした。後から「曲名・よみを自動入力」で付けられます','error'); return; }
+  const before=getList(listId); if(!before) return;
+  const targets=(before.songs||[]).filter(s=>ids.has(s.id) && needsYomi(s));
+  let ys; try{ ys=await readingsOf(targets.map(s=>s.answers[0])); }catch(e){ return; }
+  const yomiById={}; targets.forEach((s,i)=>{ if(ys[i]) yomiById[s.id]=ys[i]; });
   const list=getList(listId); if(!list) return;   // 待つ間に更新されていれば最新のリストに付ける
   let n=0;
   for(const s of list.songs||[]){
-    if(!ids.has(s.id) || !needsYomi(s)) continue;
-    const y=readingOf(s.answers[0]); if(y){ s.yomigana=[y]; n++; }
+    if(!yomiById[s.id] || !needsYomi(s)) continue;
+    s.yomigana=[yomiById[s.id]]; n++;
   }
   if(n){ await saveListToCloud(list); showToast(`${n}曲によみがなを付けました`,'success'); }
 }
@@ -2113,9 +2138,9 @@ async function fillYomiganaLater(listId, songIds){
 async function autoYomiInto(sourceText, apply){
   const src=String(sourceText||'').trim();
   if(!KANJI_RE.test(src)){ showToast('漢字を含まない曲名はよみがな不要です'); return; }
-  try{ if(!yomiTokenizer) showToast('よみがなの辞書を読み込み中…（初回のみ）'); await loadYomiTokenizer(); }
+  let y;
+  try{ if(!yomiReady) showToast('よみがなの辞書を読み込み中…（初回のみ。少し時間がかかります）'); y=await readingOf(src); }
   catch(e){ showToast('よみがなの辞書を読み込めませんでした','error'); return; }
-  const y=readingOf(src);
   if(!y){ showToast('読めない漢字が含まれていました。手で入力してください','error'); return; }
   apply(y);
 }
@@ -2142,8 +2167,14 @@ async function openAutoname(){
   // チャンネル名が判定の手がかりになるので、全曲の動画情報を取り直す（50曲ずつ）
   let meta={}, metaOk=true, yomiOk=true;
   try{ (await fetchVideoEntries([...new Set(songs.map(s=>s.videoId))])).forEach(e=>meta[e.vid]=e); }catch(e){ metaOk=false; }
-  if(!yomiTokenizer) rowsEl.innerHTML='<div class="empty-list">よみがなの辞書を読み込み中...（初回のみ。少し時間がかかります）</div>';
-  try{ await loadYomiTokenizer(); }catch(e){ yomiOk=false; }
+  if(!yomiReady){
+    const t0=Date.now();
+    const show=()=>{ rowsEl.innerHTML=`<div class="empty-list">よみがなの辞書を読み込み中…（初回のみ・${Math.floor((Date.now()-t0)/1000)}秒）<br><small>画面は操作できます。閉じても読み込みは続きます。</small></div>`; };
+    show(); const tick=setInterval(show, 1000);
+    try{ await loadYomiTokenizer(); }catch(e){ yomiOk=false; }
+    clearInterval(tick);
+  }
+  const pend=[];
   for(const s of songs){
     const m=meta[s.videoId];
     const raw=(m&&m.title) || (/^（要編集）/.test(s.title||'')?'':s.title) || '';
@@ -2152,13 +2183,19 @@ async function openAutoname(){
     const nameChange=!!g.song && !(songKey(cur)===songKey(g.song) && g.alts.every(a=>(s.answers||[]).some(x=>songKey(x)===songKey(a))));
     const song=nameChange?g.song:cur;
     const hasYomi=(s.yomigana||[]).length>0;
-    const yomi=hasYomi?(s.yomigana||[]).join(' / '):readingOf(song);
+    pend.push({ s, m, raw, cur, g, nameChange, song, hasYomi });
+  }
+  // 読みは Worker でまとめて調べる（1曲ずつだと往復が多い）
+  let ys=pend.map(()=> '');
+  if(yomiOk){ try{ ys=await readingsOf(pend.map(x=>x.hasYomi?'':x.song)); }catch(e){ yomiOk=false; } }
+  pend.forEach(({ s, m, raw, cur, g, nameChange, song, hasYomi },i)=>{
+    const yomi=hasYomi?(s.yomigana||[]).join(' / '):ys[i];
     const yomiAdd=!hasYomi && !!yomi;
-    if(!nameChange && !yomiAdd) continue;
+    if(!nameChange && !yomiAdd) return;
     // 正解が動画タイトルのまま・未設定の曲は最初からチェック。手で直したらしい曲はチェックしない（よみがなを足すだけならチェック）
     const looksAuto=!cur || cur==='（未設定）' || cur===raw;   // 正解が動画タイトルのまま（以前の取り込み）か未設定
     autonameRows.push({ songId:s.id, raw:raw||s.title||'', channel:(m&&m.channel)||'', cur, song, alts:nameChange?g.alts:[], yomi, yomiEdited:hasYomi, checked:nameChange?looksAuto:true });
-  }
+  });
   renderAutonameRows(metaOk, yomiOk);
 }
 function renderAutonameRows(metaOk, yomiOk){
@@ -2186,7 +2223,9 @@ function renderAutonameRows(metaOk, yomiOk){
 // 曲名を直したら、よみがな（手で直していなければ）も付け直す
 function onAutonameSong(i, v){
   const r=autonameRows[i]; r.song=v;
-  if(!r.yomiEdited && yomiTokenizer){ r.yomi=readingOf(v); const el=document.getElementById('autoname-yomi-'+i); if(el) el.value=r.yomi; }
+  if(!r.yomiEdited && yomiReady){
+    readingOf(v).then(y=>{ if(r.song!==v || r.yomiEdited) return; r.yomi=y; const el=document.getElementById('autoname-yomi-'+i); if(el) el.value=y; }).catch(()=>{});
+  }
 }
 function updateAutonameCount(){
   const n=autonameRows.filter(r=>r.checked).length;
