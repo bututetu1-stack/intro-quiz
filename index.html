@@ -368,6 +368,15 @@
   @keyframes bump { 0%{transform:scale(1);} 40%{transform:scale(1.22); border-color:var(--color-correct); box-shadow:0 0 16px rgba(71,255,178,0.5);} 100%{transform:scale(1);} }
   @keyframes drop { 0%,100%{ background:var(--color-surface); } 40%{ background:rgba(255,71,71,0.35); } }
 
+  /* ソロ：上部の「やめる」・一時停止ボタン */
+  .quiz-topbar { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:14px; }
+  .quit-btn { background:none; border:1px solid var(--color-border); color:var(--color-muted); padding:6px 12px; border-radius:var(--radius); cursor:pointer; font-size:13px; font-family:var(--font-body); transition:var(--transition); }
+  .quit-btn:hover { border-color:var(--color-wrong); color:var(--color-wrong); }
+  .key-hint { font-size:11px; color:var(--color-muted); }
+  .pause-btn { background:none; border:1px solid var(--color-border); color:var(--color-text); padding:6px 12px; border-radius:var(--radius); cursor:pointer; font-size:13px; font-family:var(--font-body); white-space:nowrap; flex-shrink:0; transition:var(--transition); }
+  .pause-btn:hover { border-color:var(--color-accent); color:var(--color-accent); }
+  @media (hover:none){ .key-hint { display:none; } }
+
   /* 曲名の自動判定 */
   .autoname-modal { max-width:720px; max-height:calc(100vh - 40px); display:flex; flex-direction:column; }
   .autoname-tools { display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; margin-bottom:8px; }
@@ -380,7 +389,9 @@
   .autoname-body { flex:1; min-width:0; }
   .autoname-raw { font-size:12px; color:var(--color-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:6px; }
   .autoname-ch { opacity:.7; }
-  .autoname-fields { display:grid; grid-template-columns:1.2fr 1fr; gap:6px; }
+  .autoname-fields { display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:6px; }
+  .autoname-field { display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .autoname-field > span { font-size:10px; color:var(--color-muted); letter-spacing:1px; }
   .autoname-fields .form-input { padding:8px 10px; font-size:14px; }
   .autoname-cur { font-size:11px; color:var(--color-muted); margin-top:4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   @media (max-width:560px){ .autoname-fields { grid-template-columns:1fr; } }
@@ -735,6 +746,17 @@
       <div class="card-title">② ジャンルを絞る（任意）</div>
       <div class="form-group" style="margin-bottom:0;"><select class="form-select" id="setup-genre"></select></div>
     </div>
+    <div class="card">
+      <div class="card-title">オプション</div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label class="form-label">回答候補</label>
+        <div class="toggle-switch" onclick="toggleSoloSuggest()">
+          <div class="toggle-track" id="solo-suggest-track"><div class="toggle-knob"></div></div>
+          <span style="font-size:13px;" id="solo-suggest-label">ON</span>
+        </div>
+        <div class="form-hint">入力中に、選んだリストの曲名を候補として表示します。OFFにすると候補なしで答えます。</div>
+      </div>
+    </div>
     <div class="actions-right"><button class="btn-primary" id="setup-start-btn" onclick="startSoloQuiz()" disabled>クイズ開始</button></div>
   </div>
 </div>
@@ -742,6 +764,10 @@
 <!-- クイズ -->
 <div id="page-quiz" class="page">
   <div class="quiz-container">
+    <div class="quiz-topbar">
+      <button class="quit-btn" onclick="quitSolo()" title="ソロプレイをやめる">✕ やめる</button>
+      <span class="key-hint">Space：再生／一時停止</span>
+    </div>
     <div class="quiz-progress">
       <span class="progress-text" id="progress-text">1 / 1</span>
       <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
@@ -757,6 +783,7 @@
     <div class="player-controls" style="border:none; padding:14px 0;">
       <div class="timer-display" id="timer-display">0:30</div>
       <div class="timer-bar-wrap"><div class="timer-bar" id="timer-bar" style="width:100%"></div></div>
+      <button class="pause-btn" id="solo-pause-btn" onclick="soloTogglePlay()" style="display:none;">⏸ 一時停止</button>
     </div>
     <button class="btn-primary" id="solo-start-btn" style="width:100%; margin-bottom:14px;" onclick="soloStart()">▶ 再生してスタート</button>
     <button class="buzz-btn" id="solo-buzz-btn" style="display:none; margin-bottom:14px;" onpointerdown="soloBuzz()" onclick="soloBuzz()">🔔 わかった！</button>
@@ -829,6 +856,7 @@
         <label class="form-label">よみがな（任意・複数可）</label>
         <div id="yomi-list"></div>
         <button class="multi-add" type="button" onclick="addMultiRow('yomi-list','よみがな（ひらがな）')">+ よみがなを追加</button>
+        <button class="multi-add" type="button" onclick="autoYomiForAdd()">🪄 正解からよみを自動入力</button>
       </div>
       <div class="row2">
         <div class="form-group"><label class="form-label">表示タイトル（任意）</label><input class="form-input" id="f-title" type="text" placeholder="空欄なら最初の正解を使用"></div>
@@ -875,7 +903,7 @@
     </div>
     <div style="display:flex; align-items:center; justify-content:space-between; margin:24px 0 12px;">
       <div style="font-size:13px; color:var(--color-muted);" id="detail-song-count">0 曲</div>
-      <button class="btn-sub" id="detail-autoname" onclick="openAutoname()" style="padding:8px 14px; font-size:13px;" title="動画タイトルから曲名を判定して、正解をまとめて整えます">🪄 曲名を自動判定</button>
+      <button class="btn-sub" id="detail-autoname" onclick="openAutoname()" style="padding:8px 14px; font-size:13px;" title="動画タイトルから曲名を判定し、よみがなも付けて、正解をまとめて整えます">🪄 曲名・よみを自動入力</button>
     </div>
     <div id="detail-songs"></div>
   </div>
@@ -931,7 +959,8 @@
     <div class="modal-title">曲を編集</div>
     <div class="form-group"><label class="form-label">表示タイトル（任意）</label><input class="form-input" id="edit-song-title" type="text" placeholder="空欄なら最初の正解を使用"></div>
     <div class="form-group"><label class="form-label">正解の曲名（1行に1つ）</label><textarea class="form-input" id="edit-song-answers" rows="3" placeholder="正解1&#10;正解2"></textarea></div>
-    <div class="form-group"><label class="form-label">よみがな（1行に1つ・任意）</label><textarea class="form-input" id="edit-song-yomi" rows="2" placeholder="ひらがな"></textarea></div>
+    <div class="form-group"><label class="form-label">よみがな（1行に1つ・任意）</label><textarea class="form-input" id="edit-song-yomi" rows="2" placeholder="ひらがな"></textarea>
+      <button class="multi-add" type="button" onclick="autoYomiForEdit()">🪄 正解からよみを自動入力</button></div>
     <div class="form-group"><label class="form-label">ジャンル</label>
       <select class="form-select" id="edit-song-genre">
         <option value="">未分類</option><option value="J-POP">J-POP</option><option value="アニメ">アニメ</option>
@@ -947,8 +976,8 @@
 <!-- モーダル：曲名の自動判定 -->
 <div class="modal-overlay" id="autoname-modal">
   <div class="modal autoname-modal">
-    <div class="modal-title">🪄 曲名の自動判定</div>
-    <div class="modal-text">動画タイトルとチャンネル名から曲名を推定しました。チェックした曲の「正解」を書き換えます（手で追加した別の表記は残ります）。曲名の欄は直接修正できます。</div>
+    <div class="modal-title">🪄 曲名・よみがなの自動入力</div>
+    <div class="modal-text">動画タイトルとチャンネル名から曲名を、辞書からよみがなを推定しました。チェックした曲の「正解」と「よみがな」を書き換えます（手で追加した別の表記は残ります）。各欄は直接修正できます。当て字などのよみがなは外れることがあります。</div>
     <div class="autoname-tools">
       <label><input type="checkbox" id="autoname-all" onchange="toggleAutonameAll(this.checked)"> すべて選択</label>
       <span id="autoname-count"></span>
@@ -1015,7 +1044,7 @@ const YT_API_KEY = "AIzaSyB7OK_8ozVW29QRW7UdfE2IJ86E5yV22B4";
 // グローバル状態
 // ============================================================
 const STATE = { lists: [], rooms: [], users: [], user: null, currentRoomId: null };
-const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx' };
+const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest' };
 
 function lsGet(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } }
 function lsSet(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
@@ -1159,6 +1188,8 @@ function addSong(){
   if(!url){ showToast('URLを入力してください','error'); return; }
   if(answers.length===0){ showToast('正解を1つ以上入力してください','error'); return; }
   const videoId=extractVideoId(url); if(!videoId){ showToast('有効なYouTube URLではありません','error'); return; }
+  const same=(list.songs||[]).find(s=>s.videoId===videoId);
+  if(same){ showToast(`この曲はすでに登録されています（${(same.answers||[])[0]||same.title}）`,'error'); return; }
   const u=getUser();
   const chorusRaw=document.getElementById('f-chorus').value;
   const chorusStart=chorusRaw!==''?Number(chorusRaw):null;
@@ -1179,26 +1210,105 @@ async function bulkAddSongs(){
   const list=getList(currentListId); if(!list) return;
   const lines=document.getElementById('bulk-urls').value.split('\n').map(s=>s.trim()).filter(Boolean);
   if(lines.length===0){ showToast('URLを入力してください','error'); return; }
-  const u=getUser(); let ng=0; list.songs=list.songs||[];
+  const u=getUser(); let ng=0, dup=0; list.songs=list.songs||[];
+  const existing=new Set(list.songs.map(s=>s.videoId));
   const ids=[];
-  for(const url of lines){ const videoId=extractVideoId(url); if(!videoId){ ng++; continue; } if(!ids.includes(videoId)) ids.push(videoId); }
+  for(const url of lines){
+    const videoId=extractVideoId(url); if(!videoId){ ng++; continue; }
+    if(existing.has(videoId)){ dup++; continue; }   // このリストに登録済みの曲は追加しない
+    if(!ids.includes(videoId)) ids.push(videoId);
+  }
+  const skipNotes=[]; if(dup) skipNotes.push(`${dup}曲は登録済みのためスキップ`); if(ng) skipNotes.push(`${ng}件は無効なURL`);
+  if(ids.length===0){ showToast(`追加できる曲がありません（${skipNotes.join('、')||'URLを確認してください'}）`,'error'); return; }
   // 動画タイトルを取得して曲名を自動判定（取得できなければ従来どおり仮の曲として追加）
   let meta={};
   try{ (await fetchVideoEntries(ids)).forEach(e=>meta[e.vid]=e); }catch(e){ meta=null; }
+  const newIds=[];
   for(const videoId of ids){
     const m=meta&&meta[videoId];
-    if(m && m.title) list.songs.push(songFromVideo(videoId, m.title, m.channel, '', u));
-    else list.songs.push({ id:genUuid(), addedByUuid:u.uuid, addedByName:u.name, url:`https://www.youtube.com/watch?v=${videoId}`, videoId, answers:['（未設定）'], yomigana:[], title:'（要編集）'+videoId, genre:'', createdAt:Date.now() });
+    const song=(m && m.title) ? songFromVideo(videoId, m.title, m.channel, '', u)
+      : { id:genUuid(), addedByUuid:u.uuid, addedByName:u.name, url:`https://www.youtube.com/watch?v=${videoId}`, videoId, answers:['（未設定）'], yomigana:[], title:'（要編集）'+videoId, genre:'', createdAt:Date.now() };
+    list.songs.push(song); newIds.push(song.id);
   }
-  const ok=ids.length;
-  saveListToCloud(list).then(()=>{
-    document.getElementById('bulk-urls').value='';
-    const note=meta?'。曲名は自動判定しています':'（動画情報を取得できなかったため、正解は後から編集してください）';
-    showToast(`${ok}曲追加${ng?` / ${ng}件は無効URL`:''}${ok?note:''}`, ok?'success':'error');
-  });
+  await saveListToCloud(list);
+  document.getElementById('bulk-urls').value='';
+  const note=meta?'曲名は自動判定しています':'動画情報を取得できなかったため、正解は後から編集してください';
+  showToast(`${ids.length}曲を追加しました${skipNotes.length?`（${skipNotes.join('、')}）`:''}。${note}`,'success');
+  fillYomiganaLater(list.id, newIds);
 }
 
-// ===== 既存の曲をまとめて自動判定（プレビューで確認・修正してから反映） =====
+// ===== よみがなの自動付与（kuromoji.js の辞書で漢字の読みを調べる。辞書は約17MBなので必要になった時だけ読み込む） =====
+// 当て字・特殊な読み（紅蓮華→ぐれんはな 等）は外れるが、よみがなは「追加で正解にする読み」なので害はない
+const KUROMOJI_JS='https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js';
+const KUROMOJI_DICT='https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/';
+const KANJI_RE=/[㐀-鿿豈-﫿々〆]/;
+let yomiTokenizer=null, yomiTokenizerPromise=null;
+function loadYomiTokenizer(){
+  if(yomiTokenizer) return Promise.resolve(yomiTokenizer);
+  if(yomiTokenizerPromise) return yomiTokenizerPromise;
+  yomiTokenizerPromise=new Promise((resolve,reject)=>{
+    const build=()=>{
+      try{ window.kuromoji.builder({ dicPath:KUROMOJI_DICT }).build((err,tk)=>{ if(err) reject(err); else { yomiTokenizer=tk; resolve(tk); } }); }
+      catch(e){ reject(e); }
+    };
+    if(window.kuromoji) return build();
+    const sc=document.createElement('script'); sc.src=KUROMOJI_JS; sc.async=true;
+    sc.onload=build; sc.onerror=()=>reject(new Error('よみがなの辞書を読み込めませんでした'));
+    document.head.appendChild(sc);
+  });
+  yomiTokenizerPromise.catch(()=>{ yomiTokenizerPromise=null; });  // 失敗したら次回やり直せるように
+  return yomiTokenizerPromise;
+}
+function kataToHira(s){ return String(s).replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-96)); }
+// 漢字を含む曲名の読み（ひらがな）。辞書が未読込・漢字なし・読めない漢字がある場合は空文字
+function readingOf(text){
+  const t=String(text||'').normalize('NFKC');
+  if(!yomiTokenizer || !KANJI_RE.test(t)) return '';
+  let ok=true;
+  const r=yomiTokenizer.tokenize(t).map(x=>{
+    if(!KANJI_RE.test(x.surface_form)) return x.surface_form;
+    if(!x.reading || x.reading==='*'){ ok=false; return ''; }
+    return x.reading;
+  }).join('');
+  return ok?kataToHira(r):'';
+}
+function needsYomi(s){ return KANJI_RE.test((s.answers||[])[0]||'') && !(s.yomigana||[]).length; }
+// 追加した曲によみがなを付けて保存（辞書の読み込みに時間がかかるので、曲を保存した後に裏で行う）
+async function fillYomiganaLater(listId, songIds){
+  const ids=new Set(songIds);
+  const first=getList(listId); if(!first || !(first.songs||[]).some(s=>ids.has(s.id) && needsYomi(s))) return;
+  try{
+    if(!yomiTokenizer) showToast('よみがなを付けています…（初回は辞書の読み込みに少し時間がかかります）');
+    await loadYomiTokenizer();
+  }catch(e){ showToast('よみがなの辞書を読み込めませんでした。後から「曲名・よみを自動入力」で付けられます','error'); return; }
+  const list=getList(listId); if(!list) return;   // 待つ間に更新されていれば最新のリストに付ける
+  let n=0;
+  for(const s of list.songs||[]){
+    if(!ids.has(s.id) || !needsYomi(s)) continue;
+    const y=readingOf(s.answers[0]); if(y){ s.yomigana=[y]; n++; }
+  }
+  if(n){ await saveListToCloud(list); showToast(`${n}曲によみがなを付けました`,'success'); }
+}
+// 編集画面・追加フォームの「よみを自動入力」
+async function autoYomiInto(sourceText, apply){
+  const src=String(sourceText||'').trim();
+  if(!KANJI_RE.test(src)){ showToast('漢字を含まない曲名はよみがな不要です'); return; }
+  try{ if(!yomiTokenizer) showToast('よみがなの辞書を読み込み中…（初回のみ）'); await loadYomiTokenizer(); }
+  catch(e){ showToast('よみがなの辞書を読み込めませんでした','error'); return; }
+  const y=readingOf(src);
+  if(!y){ showToast('読めない漢字が含まれていました。手で入力してください','error'); return; }
+  apply(y);
+}
+function autoYomiForAdd(){
+  const first=collectMulti('answers-list')[0];
+  autoYomiInto(first, y=>{ const inp=document.querySelector('#yomi-list input'); if(inp && !inp.value.trim()) inp.value=y; else addMultiRow('yomi-list','よみがな（ひらがな）',y); });
+}
+function autoYomiForEdit(){
+  const first=document.getElementById('edit-song-answers').value.split('\n').map(x=>x.trim()).filter(Boolean)[0];
+  autoYomiInto(first, y=>{ const ta=document.getElementById('edit-song-yomi'); const cur=ta.value.split('\n').map(x=>x.trim()).filter(Boolean); if(!cur.includes(y)) ta.value=[y,...cur].join('\n'); });
+}
+
+// ===== 既存の曲をまとめて自動判定（曲名・よみがな。プレビューで確認・修正してから反映） =====
 let autonameRows=[];
 async function openAutoname(){
   const list=getList(currentListId); if(!list) return;
@@ -1210,26 +1320,33 @@ async function openAutoname(){
   autonameRows=[];
   openModal('autoname-modal');
   // チャンネル名が判定の手がかりになるので、全曲の動画情報を取り直す（50曲ずつ）
-  let meta={}, metaOk=true;
+  let meta={}, metaOk=true, yomiOk=true;
   try{ (await fetchVideoEntries([...new Set(songs.map(s=>s.videoId))])).forEach(e=>meta[e.vid]=e); }catch(e){ metaOk=false; }
+  if(!yomiTokenizer) rowsEl.innerHTML='<div class="empty-list">よみがなの辞書を読み込み中...（初回のみ。少し時間がかかります）</div>';
+  try{ await loadYomiTokenizer(); }catch(e){ yomiOk=false; }
   for(const s of songs){
     const m=meta[s.videoId];
     const raw=(m&&m.title) || (/^（要編集）/.test(s.title||'')?'':s.title) || '';
-    if(!raw) continue;
-    const g=guessSongName(raw, m&&m.channel);
-    if(!g.song) continue;
     const cur=(s.answers||[])[0]||'';
-    const already=songKey(cur)===songKey(g.song) && g.alts.every(a=>(s.answers||[]).some(x=>songKey(x)===songKey(a)));
-    if(already) continue;
-    // 正解が動画タイトルのまま・未設定の曲は最初からチェック。手で直したらしい曲はチェックしない
+    const g=raw?guessSongName(raw, m&&m.channel):{ song:'', alts:[] };
+    const nameChange=!!g.song && !(songKey(cur)===songKey(g.song) && g.alts.every(a=>(s.answers||[]).some(x=>songKey(x)===songKey(a))));
+    const song=nameChange?g.song:cur;
+    const hasYomi=(s.yomigana||[]).length>0;
+    const yomi=hasYomi?(s.yomigana||[]).join(' / '):readingOf(song);
+    const yomiAdd=!hasYomi && !!yomi;
+    if(!nameChange && !yomiAdd) continue;
+    // 正解が動画タイトルのまま・未設定の曲は最初からチェック。手で直したらしい曲はチェックしない（よみがなを足すだけならチェック）
     const looksAuto=!cur || cur==='（未設定）' || cur===raw || cur===s.title;
-    autonameRows.push({ songId:s.id, raw, channel:(m&&m.channel)||'', cur, song:g.song, alts:g.alts, checked:looksAuto });
+    autonameRows.push({ songId:s.id, raw:raw||s.title||'', channel:(m&&m.channel)||'', cur, song, alts:nameChange?g.alts:[], yomi, yomiEdited:hasYomi, checked:nameChange?looksAuto:true });
   }
-  renderAutonameRows(metaOk);
+  renderAutonameRows(metaOk, yomiOk);
 }
-function renderAutonameRows(metaOk){
+function renderAutonameRows(metaOk, yomiOk){
   const el=document.getElementById('autoname-rows');
-  const note=metaOk?'':'<div class="form-hint" style="margin-bottom:8px;">※ YouTubeの情報を取得できなかったため、登録済みのタイトルだけで判定しています。</div>';
+  const notes=[];
+  if(!metaOk) notes.push('YouTubeの情報を取得できなかったため、登録済みのタイトルだけで判定しています。');
+  if(!yomiOk) notes.push('よみがなの辞書を読み込めなかったため、よみがなは自動入力していません。');
+  const note=notes.length?'<div class="form-hint" style="padding:8px 12px;">※ '+notes.join('<br>※ ')+'</div>':'';
   if(!autonameRows.length){ el.innerHTML=note+'<div class="empty-list">変更が必要な曲はありません</div>'; document.getElementById('autoname-apply').disabled=true; updateAutonameCount(); return; }
   el.innerHTML=note+autonameRows.map((r,i)=>`
     <div class="autoname-row">
@@ -1237,13 +1354,19 @@ function renderAutonameRows(metaOk){
       <div class="autoname-body">
         <div class="autoname-raw" title="${escAttr(r.raw)}">${escHtml(r.raw)}${r.channel?`<span class="autoname-ch">／${escHtml(r.channel)}</span>`:''}</div>
         <div class="autoname-fields">
-          <input class="form-input autoname-song" type="text" value="${escAttr(r.song)}" placeholder="曲名" oninput="autonameRows[${i}].song=this.value">
-          <input class="form-input autoname-alts" type="text" value="${escAttr(r.alts.join(' / '))}" placeholder="別の表記（/ 区切り・任意）" oninput="autonameRows[${i}].alts=this.value.split(/\\s+\\/\\s+|／/).map(x=>x.trim()).filter(Boolean)">
+          <label class="autoname-field"><span>曲名</span><input class="form-input autoname-song" type="text" value="${escAttr(r.song)}" oninput="onAutonameSong(${i}, this.value)"></label>
+          <label class="autoname-field"><span>よみがな</span><input class="form-input autoname-yomi" id="autoname-yomi-${i}" type="text" value="${escAttr(r.yomi)}" placeholder="（なし）" oninput="autonameRows[${i}].yomi=this.value; autonameRows[${i}].yomiEdited=true"></label>
+          <label class="autoname-field"><span>別の表記</span><input class="form-input autoname-alts" type="text" value="${escAttr(r.alts.join(' / '))}" placeholder="（任意・ / 区切り）" oninput="autonameRows[${i}].alts=this.value.split(/\\s+\\/\\s+|／/).map(x=>x.trim()).filter(Boolean)"></label>
         </div>
         <div class="autoname-cur">現在の正解：${escHtml(r.cur||'（なし）')}</div>
       </div>
     </div>`).join('');
   updateAutonameCount();
+}
+// 曲名を直したら、よみがな（手で直していなければ）も付け直す
+function onAutonameSong(i, v){
+  const r=autonameRows[i]; r.song=v;
+  if(!r.yomiEdited && yomiTokenizer){ r.yomi=readingOf(v); const el=document.getElementById('autoname-yomi-'+i); if(el) el.value=r.yomi; }
 }
 function updateAutonameCount(){
   const n=autonameRows.filter(r=>r.checked).length;
@@ -1267,11 +1390,12 @@ function applyAutoname(){
     const next=[];
     [r.song.trim(), ...r.alts, ...keep].forEach(a=>{ if(a && !next.some(x=>songKey(x)===songKey(a))) next.push(a); });
     s.answers=next;
+    s.yomigana=String(r.yomi||'').split(/\s+\/\s+|／|\n/).map(x=>x.trim()).filter(Boolean);
     if(/^（要編集）/.test(s.title||'')) s.title=r.raw;
     n++;
   }
   if(!n) return;
-  saveListToCloud(list).then(()=>{ closeModal('autoname-modal'); showToast(`${n}曲の曲名を更新しました`,'success'); });
+  saveListToCloud(list).then(()=>{ closeModal('autoname-modal'); showToast(`${n}曲の曲名・よみがなを更新しました`,'success'); });
 }
 // ===== 曲名の自動判定（YouTubeの動画タイトル＋チャンネル名から推定） =====
 // 例：「ヒグチアイ / 悪魔の子 (アニメスペシャルVer.) | Ai Higuchi “Akuma no Ko” Anime Special Ver.」（チャンネル：ヒグチアイ）
@@ -1285,7 +1409,6 @@ function isNoisePart(s){ return songKey(String(s||'').replace(SONG_NOISE_RE,' ')
 function stripFeat(s){ return String(s).replace(/\s*[\(（]?\s*(feat\.?|ft\.|featuring|prod\.?|produced by)\s.*$/i,'').replace(/\s*(feat\.|ft\.)\S.*$/i,'').trim(); }
 function hasLatin(s){ return /[A-Za-z]/.test(String(s).normalize('NFKC')); }
 function hasJapanese(s){ return /[\u3040-\u30ff\u3400-\u9fff]/.test(String(s)); }
-// 先頭・末尾の飾りを取り除いて整える
 // 括弧から外した「カバー」「歌手名」の位置に付ける目印（私用領域の文字。表示には残さない）
 const SONG_MARK=String.fromCharCode(0xE000);
 // 対になっていない括弧を先頭・末尾から外す（「ゆらゆら -運命の花-」や Don't say "lazy" はそのまま）
@@ -1296,6 +1419,7 @@ function trimUnpaired(t){
   }
   return t;
 }
+// 先頭・末尾の飾りを取り除いて整える
 function tidySong(s){
   let t=String(s||'').split(SONG_MARK).join('').replace(/#\S+/g,' ').replace(/\s+/g,' ').trim();
   for(let i=0;i<5;i++){
@@ -1544,7 +1668,7 @@ async function importPlaylist(){
     const u=getUser(); list.songs=list.songs||[];
     const existing=new Set(list.songs.map(s=>s.videoId));
     const seen=new Set();  // ミックスは同じ曲が繰り返し返るので、取り込み内の重複は件数に数えない
-    let added=0, skipped=0, dup=0;
+    let added=0, skipped=0, dup=0; const newIds=[];
     for(const it of entries){
       const vid=it.vid, title=it.title;
       if(vid && seen.has(vid)) continue;
@@ -1552,10 +1676,12 @@ async function importPlaylist(){
       if(!vid || !title || title==='Deleted video' || title==='Private video' || !it.embeddable){ skipped++; continue; }
       if(existing.has(vid)){ dup++; continue; }
       existing.add(vid);
-      list.songs.push(songFromVideo(vid, title, it.channel, genre, u));
+      const song=songFromVideo(vid, title, it.channel, genre, u);
+      list.songs.push(song); newIds.push(song.id);
       added++;
     }
     await saveListToCloud(list);
+    fillYomiganaLater(list.id, newIds);
     document.getElementById('pl-url').value='';
     const notes=[]; if(dup) notes.push(`${dup}曲は登録済み`); if(skipped) notes.push(`${skipped}件は再生不可などで除外`);
     showToast(`${viaPlayer?'自動生成リストから':''}${added}曲を取り込みました${notes.length?`（${notes.join('、')}）`:''}。曲名は自動判定しています`,'success');
@@ -2013,6 +2139,17 @@ document.addEventListener('keydown', e=>{
   const b=document.getElementById('match-buzz-btn');
   if(b.style.display==='none' || b.disabled) return;
   e.preventDefault(); buzz();
+});
+// ソロ：スペースキーで再生／一時停止（入力欄にいる時と、ダイアログ表示中は除く）
+document.addEventListener('keydown', e=>{
+  if(e.code!=='Space' && e.key!==' ') return;
+  if(!document.getElementById('page-quiz').classList.contains('active')) return;
+  const ae=document.activeElement, tag=(ae&&ae.tagName)||'';
+  if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return;
+  if(document.querySelector('.modal-overlay.open')) return;
+  e.preventDefault();
+  if(tag==='BUTTON') ae.blur();   // フォーカス中のボタンがスペースで押されるのを防ぐ
+  if(!e.repeat) soloTogglePlay();
 });
 
 // ============================================================
@@ -2875,6 +3012,7 @@ function leaveRoom(){
 let setupSelectedListId=null;
 function renderSetup(){
   setupSelectedListId=null;
+  setSoloSuggest(soloSuggestOn);
   document.getElementById('setup-start-btn').disabled=true;
   document.getElementById('setup-genre-card').style.display='none';
   const grid=document.getElementById('setup-list-grid');
@@ -2900,14 +3038,25 @@ function selectSetupList(id){
 }
 
 let quiz={};
+const SOLO_LIMIT=30;   // 1問の再生上限（秒）
+// 回答候補の表示（端末ごとに記憶）
+let soloSuggestOn=lsGet(LS.soloSuggest, true)!==false;
+function setSoloSuggest(on){
+  soloSuggestOn=on; lsSet(LS.soloSuggest, on);
+  document.getElementById('solo-suggest-track').classList.toggle('on',on);
+  document.getElementById('solo-suggest-label').textContent=on?'ON':'OFF';
+}
+function toggleSoloSuggest(){ setSoloSuggest(!soloSuggestOn); }
 function startSoloQuiz(){
   const list=getList(setupSelectedListId); if(!list){ showToast('リストを選んでください','error'); return; }
   const genre=document.getElementById('setup-genre').value;
   let pool=(list.songs||[]).filter(s=>!genre||s.genre===genre).filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）');
   if(pool.length===0){ showToast('該当する曲がありません（正解未設定は除外）','error'); return; }
   const shuffled=[...pool].sort(()=>Math.random()-0.5);
-  quiz={ songs:shuffled, current:0, score:0, answered:false, results:[], timer:null, timeLeft:30, playing:false };
-  fillDatalist('solo-choices', buildChoices(pool));
+  quiz={ songs:shuffled, current:0, score:0, answered:false, buzzed:false, paused:false, results:[], timer:null };
+  const input=document.getElementById('answer-input');
+  if(soloSuggestOn){ fillDatalist('solo-choices', buildChoices(pool)); input.setAttribute('list','solo-choices'); }
+  else { fillDatalist('solo-choices', []); input.removeAttribute('list'); }
   showPage('quiz'); loadQuestion();
 }
 function loadQuestion(){
@@ -2920,14 +3069,15 @@ function loadQuestion(){
   document.getElementById('submit-btn').disabled=false;
   document.getElementById('feedback-box').className='feedback-box';
   document.getElementById('next-btn').className='next-btn';
-  document.getElementById('timer-display').textContent='0:30';
+  document.getElementById('timer-display').textContent=`0:${String(SOLO_LIMIT).padStart(2,'0')}`;
   document.getElementById('timer-bar').style.width='100%';
   document.getElementById('timer-bar').style.background='var(--color-accent)';
   const sb=document.getElementById('solo-start-btn'); sb.style.display=''; sb.disabled=false; sb.textContent='▶ 再生してスタート';
   document.getElementById('solo-buzz-btn').style.display='none';
   document.getElementById('solo-answer-area').style.display='none';
-  setSoloCover(false,'▶ を押して再生');
-  quiz.answered=false; quiz.buzzed=false; quiz.timeLeft=30; soloSongStart=null; soloPlaying=false;
+  setSoloPauseBtn(null);
+  setSoloCover(false,'▶ を押して再生（Space でもOK）');
+  quiz.answered=false; quiz.buzzed=false; quiz.paused=false; soloSongStart=null; soloPlaying=false;
   if(quiz.timer) clearInterval(quiz.timer);
   if(soloStopTimer) clearTimeout(soloStopTimer);
   if(soloWatchdog) clearTimeout(soloWatchdog);
@@ -2944,32 +3094,65 @@ function soloStart(){
     if(!soloPlaying){ setSoloCover(false,'⚠ 再生できませんでした'); sb.disabled=false; sb.textContent='▶ もう一度試す'; showToast('この曲は再生できないかもしれません','error'); }
   },6000);
 }
+// 再生位置（秒）。一時停止中は進まないので、残り時間もそのまま止まる
+function soloCurrentTime(){ try{ return soloPlayer && soloPlayer.getCurrentTime ? soloPlayer.getCurrentTime() : 0; }catch(e){ return 0; } }
 function onSoloSongStart(){
-  soloPlaying=true; soloSongStart=performance.now();
+  soloPlaying=true; soloSongStart=performance.now(); quiz.paused=false;
   if(soloWatchdog) clearTimeout(soloWatchdog);
   document.getElementById('solo-start-btn').style.display='none';
   document.getElementById('solo-buzz-btn').style.display='';
+  setSoloPauseBtn(true);
   setSoloCover(true,'♪ 再生中');
-  quiz.timeLeft=30;
   if(quiz.timer) clearInterval(quiz.timer);
+  quiz.timer=setInterval(soloTick,100);
+}
+function soloTick(){
+  if(quiz.buzzed || quiz.answered) return;
   const bar=document.getElementById('timer-bar'), disp=document.getElementById('timer-display');
-  quiz.timer=setInterval(()=>{
-    if(quiz.buzzed) return;
-    quiz.timeLeft-=0.1; const left=Math.max(0,quiz.timeLeft), secs=Math.ceil(left);
-    disp.textContent=`0:${String(secs).padStart(2,'0')}`; bar.style.width=`${(left/30)*100}%`;
-    if(left<=5) bar.style.background='var(--color-wrong)';
-    if(left<=0){ clearInterval(quiz.timer); try{soloPlayer.pauseVideo();}catch(e){} setSoloCover(false,'⏹ 再生終了'); soloRevealAnswerInput(); }
-  },100);
+  const left=Math.max(0, SOLO_LIMIT-soloCurrentTime()), secs=Math.ceil(left);
+  disp.textContent=`0:${String(secs).padStart(2,'0')}`; bar.style.width=`${(left/SOLO_LIMIT)*100}%`;
+  bar.style.background=left<=5?'var(--color-wrong)':'var(--color-accent)';
+  if(left<=0){
+    clearInterval(quiz.timer); quiz.buzzed=true;
+    try{ soloPlayer.pauseVideo(); }catch(e){}
+    setSoloCover(false,'⏹ 再生終了'); setSoloPauseBtn(null);
+    soloRevealAnswerInput();
+  }
+}
+// Space キー・一時停止ボタン：未再生ならスタート、再生中なら一時停止、止まっていれば再開。
+// 回答後も曲の続きを聴くのに使える（回答入力中は何もしない）
+function soloTogglePlay(){
+  if(!document.getElementById('page-quiz').classList.contains('active')) return;
+  if(!soloPlaying){
+    const sb=document.getElementById('solo-start-btn');
+    if(sb.style.display!=='none' && !sb.disabled) soloStart();
+    return;
+  }
+  if(quiz.buzzed && !quiz.answered) return;
+  let st=-1; try{ st=soloPlayer.getPlayerState(); }catch(e){}
+  const playing=(st===YT.PlayerState.PLAYING || st===YT.PlayerState.BUFFERING);
+  try{ playing ? soloPlayer.pauseVideo() : soloPlayer.playVideo(); }catch(e){}
+  quiz.paused=playing;
+  setSoloPauseBtn(!playing);
+  if(quiz.answered) setSoloCover(!playing, playing?'⏸ 一時停止中':'♪ 再生中');
+  else setSoloCover(!playing, playing?'⏸ 一時停止中（Space で再開）':'♪ 再生中');
+}
+// 一時停止ボタンの表示。playing=true:「⏸ 一時停止」、false:「▶ 再開」、null:非表示
+function setSoloPauseBtn(playing){
+  const b=document.getElementById('solo-pause-btn');
+  if(playing===null){ b.style.display='none'; return; }
+  b.style.display=''; b.textContent=playing?'⏸ 一時停止':(quiz.answered?'▶ 続きを聴く':'▶ 再開');
 }
 function soloBuzz(){
-  if(quiz.buzzed || quiz.answered) return;
+  if(quiz.buzzed || quiz.answered || !soloPlaying) return;
   quiz.buzzed=true;
   SFX.buzz(); vibrate(40);
-  const elapsed = soloSongStart? (performance.now()-soloSongStart)/1000 : null;
+  const elapsed=soloCurrentTime();
   if(quiz.timer) clearInterval(quiz.timer);
   try{ soloPlayer.pauseVideo(); }catch(e){}
-  setSoloCover(false, elapsed!=null?`⏸ ${elapsed.toFixed(2)} 秒で回答`:'⏸ 回答');
-  document.getElementById('solo-buzz-time').textContent = elapsed!=null?`タイム: ${elapsed.toFixed(2)} 秒 — 曲名を入力`:'曲名を入力';
+  setSoloPauseBtn(null);
+  setSoloCover(false, `⏸ ${elapsed.toFixed(2)} 秒で回答`);
+  document.getElementById('solo-buzz-time').textContent=`タイム: ${elapsed.toFixed(2)} 秒 — 曲名を入力`;
   soloRevealAnswerInput();
 }
 function soloRevealAnswerInput(){
@@ -3008,7 +3191,8 @@ function submitAnswer(){
   quiz.answered=true; if(quiz.timer) clearInterval(quiz.timer);
   if(soloStopTimer) clearTimeout(soloStopTimer);
   try{ soloPlayer && soloPlayer.pauseVideo(); }catch(e){}
-  setSoloCover(false,'⏸ 回答');
+  setSoloCover(false,'⏸ 回答（Space で続きを聴く）');
+  setSoloPauseBtn(soloPlaying?false:null);
   input.className='answer-input '+(isCorrect?'correct':'wrong'); input.disabled=true;
   document.getElementById('submit-btn').disabled=true;
   const box=document.getElementById('feedback-box');
@@ -3021,10 +3205,28 @@ function submitAnswer(){
   nb.textContent=(quiz.current>=quiz.songs.length-1)?'結果を見る →':'次の問題 →';
 }
 function nextQuestion(){ if(quiz.current>=quiz.songs.length-1) showResult(); else { quiz.current++; loadQuestion(); } }
-function showResult(){
+// 再生を止めてタイマー類を解除
+function stopSolo(){
+  if(quiz.timer){ clearInterval(quiz.timer); quiz.timer=null; }
+  if(soloStopTimer){ clearTimeout(soloStopTimer); soloStopTimer=null; }
+  if(soloWatchdog){ clearTimeout(soloWatchdog); soloWatchdog=null; }
+  try{ soloPlayer && soloPlayer.stopVideo(); }catch(e){}
+  soloPlaying=false;
+}
+// 途中でやめる：回答済みの問題があればそこまでの結果を表示
+function quitSolo(){
+  const done=(quiz.results||[]).length;
+  openConfirm('ソロプレイをやめますか？', done?`ここまでの結果（${done}問）を表示します。`:'まだ1問も回答していないので、曲リストの選択に戻ります。', ()=>{
+    stopSolo();
+    if(done) showResult(true); else showPage('setup');
+  }, 'やめる');
+}
+function showResult(partial){
+  stopSolo();
+  const total=partial?quiz.results.length:quiz.songs.length;
   document.getElementById('result-score').textContent=quiz.score;
-  document.getElementById('result-total').textContent=`/ ${quiz.songs.length} 問正解`;
-  document.getElementById('result-list').innerHTML=quiz.results.map(r=>`<div class="result-item"><span style="font-size:18px;">${r.correct?'✅':'❌'}</span><div style="flex:1;"><div>${escHtml(r.title)}</div><div style="color:var(--color-muted); font-size:12px; margin-top:2px;">あなたの答え：${escHtml(r.userInput)}</div></div></div>`).join('');
+  document.getElementById('result-total').textContent=`/ ${total} 問正解${partial?'（途中でやめました）':''}`;
+  document.getElementById('result-list').innerHTML=quiz.results.map(r=>`<div class="result-item"><span style="font-size:18px;">${r.correct?'✅':'❌'}</span><div style="flex:1;"><div>${escHtml(r.answer||r.title)}</div><div style="color:var(--color-muted); font-size:12px; margin-top:2px;">あなたの答え：${escHtml(r.userInput)}</div></div></div>`).join('');
   showPage('result');
 }
 
@@ -3101,9 +3303,10 @@ function updateHomeStats(){
 }
 function openModal(id){ document.getElementById(id).classList.add('open'); }
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
-function openConfirm(title,text,onYes){
+function openConfirm(title,text,onYes,yesLabel){
   document.getElementById('confirm-title').textContent=title;
   document.getElementById('confirm-text').textContent=text;
+  document.getElementById('confirm-btn').textContent=yesLabel||'実行';
   document.getElementById('confirm-btn').onclick=()=>{ onYes(); closeModal('confirm-modal'); };
   openModal('confirm-modal');
 }
