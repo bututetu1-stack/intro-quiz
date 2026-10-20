@@ -7,6 +7,7 @@
 //  - 回答の判定（answerMatches）：副題の省略・長い曲名の打ち間違いは正解、短い曲名は厳しく
 //  - 4択の選択肢（makeOptions）
 //  - 今日のチャレンジの乱数（seededRand）：同じ日付なら同じ並び
+//  - 対戦の判定（buzzDecideAt・pickBuzzWinner・チーム戦・司会・回答時間）：サーバー時刻を差し替えて確認
 const fs=require('fs'), path=require('path'), vm=require('vm'), cp=require('child_process'), os=require('os');
 const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 let failed=0;
@@ -94,6 +95,50 @@ const seq=s=>{ const r=seededRand(s); return Array.from({length:8},()=>r()); };
 ok(JSON.stringify(seq('iq-daily:2026-10-21'))===JSON.stringify(seq('iq-daily:2026-10-21')), '今日のチャレンジ：同じ日付なら同じ乱数列（全員同じ曲）');
 ok(JSON.stringify(seq('iq-daily:2026-10-21'))!==JSON.stringify(seq('iq-daily:2026-10-22')), '今日のチャレンジ：日付が違えば別の乱数列');
 ok(seq('x').every(v=>v>=0 && v<1), '今日のチャレンジ：乱数は 0 以上 1 未満');
+
+// 8) 対戦の判定（Firebase なしで、関数だけを取り出して確認）
+const constLine=(name)=>{ const m=new RegExp('const '+name+'=[^;\\n]*;').exec(scripts); if(!m) throw new Error('定数が見つからない: '+name); return m[0]; };
+const code2=[
+  constLine('BUZZ_MARGIN_MS'), constLine('BUZZ_MAX_WAIT_MS'), constLine('ANSWER_LIMIT_MS'), constLine('TEAMS'),
+  'let __now=0; function serverNow(){ return __now; }',
+  ...['safeNum','buzzDecideAt','pickBuzzWinner','playerT0','presenterOf','isPresenter','contestants','teamTotals','winningTeam','teamAssignUpdates','answerLimitMs'].map(fnSrc),
+  'globalThis.__m={ buzzDecideAt, pickBuzzWinner, playerT0, isPresenter, contestants, teamTotals, winningTeam, teamAssignUpdates, answerLimitMs, setNow:v=>{ __now=v; } };'
+].join('\n');
+const ctx2={}; vm.createContext(ctx2); vm.runInContext(code2, ctx2);
+const M=ctx2.__m;
+{ // 早押しの判定時刻：まだ押していない人の再生位置が最短タイムを超えるまで待つ（最大1.5秒）
+  const room={ hostUuid:'A', status:'playing', game:{}, players:{ A:{uuid:'A'}, B:{uuid:'B'}, C:{uuid:'C'} } };
+  const round={ buzzOpenAt:1000, buzzes:{ A:{ e:7, at:1000 } }, pos:{ A:-6000, B:-5000 } };   // B は1秒遅れて再生、C はまだ再生していない
+  M.setNow(1000);
+  ok(M.buzzDecideAt(round, room)===2250, '早押しの判定：遅れている人の再生位置が最短タイムを超えるまで待つ（＋0.25秒）');
+  room.players.B.listen=true;
+  ok(M.buzzDecideAt(round, room)===1250, '早押しの判定：ホストの端末の音で聴く人はホストの再生位置で数える');
+  room.players.B.listen=false; round.pos.B=-1000;
+  ok(M.buzzDecideAt(round, room)===2500, '早押しの判定：待つのは最初の早押しから最大1.5秒');
+  const r2={ buzzOpenAt:1000, buzzes:{ B:{ e:5, at:1000 } }, pos:{ A:0, B:-4000 } };
+  const room2={ hostUuid:'A', status:'playing', game:{ presenter:'A' }, players:{ A:{uuid:'A'}, B:{uuid:'B'} } };
+  ok(M.buzzDecideAt(r2, room2)===1250, '早押しの判定：司会は待たない');
+}
+{ // 回答権：再生位置が短い人 → 同じなら先に届いた人。ペナルティ中・部屋にいない人は除く
+  M.setNow(2000);
+  const round={ buzzes:{ A:{ e:7, at:1000 }, B:{ e:6.5, at:1300 } } };
+  ok(M.pickBuzzWinner(round, ['A','B'])[0]==='B', '回答権：後から届いても再生位置が短い人');
+  ok(M.pickBuzzWinner({ buzzes:{ A:{ e:6, at:1200 }, B:{ e:6, at:1100 } } }, ['A','B'])[0]==='B', '回答権：同じタイムなら先に届いた人');
+  ok(M.pickBuzzWinner({ ...round, lockouts:{ B:5000 } }, ['A','B'])[0]==='A', '回答権：ペナルティ中の人は除く');
+  ok(M.pickBuzzWinner(round, ['A'])[0]==='A', '回答権：部屋にいない人は除く');
+}
+{ // チーム戦・司会
+  const room={ hostUuid:'A', status:'playing', game:{ scores:{ A:1, B:3, C:1 } }, players:{ A:{uuid:'A',team:'red'}, B:{uuid:'B',team:'blue'}, C:{uuid:'C',team:'red'} } };
+  ok(JSON.stringify(M.teamTotals(room))==='{"red":2,"blue":3}' && M.winningTeam(room)==='blue', 'チーム戦：個人の得点の合計で勝敗');
+  room.game.scores.C=2;
+  ok(M.winningTeam(room)===null, 'チーム戦：同点は引き分け');
+  room.game.presenter='A';
+  ok(M.teamTotals(room).red===2 && M.contestants(room).length===2 && M.isPresenter(room,'A'), '司会：得点・人数に数えない');
+  const lobby={ id:'R', hostUuid:'A', status:'lobby', players:{ A:{uuid:'A'}, B:{uuid:'B'}, C:{uuid:'C'} } };
+  const ups=M.teamAssignUpdates(lobby, 'A'); const vals=Object.values(ups).sort();
+  ok(vals.join(',')==='blue,red' && !Object.keys(ups).some(k=>k.includes('/A/')), 'チーム戦：未定の人を人数が少ない方へ振り分け（司会は除く）');
+}
+ok(M.answerLimitMs({ settings:{ answerLimit:10 } })===10000 && M.answerLimitMs({ settings:{} })===20000 && M.answerLimitMs({ settings:{ answerLimit:999 } })===20000, '回答時間：設定の秒数（未設定・範囲外は20秒）');
 
 console.log(failed?`\n${failed} 件失敗`:'\nすべて成功');
 process.exit(failed?1:0);
