@@ -190,7 +190,7 @@
   .score-chip.me { border-color:var(--color-accent); }
   .score-chip.done { opacity:0.55; }
   .score-val { font-weight:900; color:var(--color-accent); }
-  .buzz-btn { width:100%; padding:30px; font-size:30px; font-weight:900; font-family:var(--font-body); letter-spacing:4px; background:var(--color-accent2); color:#000; border:none; border-radius:var(--radius); cursor:pointer; transition:var(--transition); }
+  .buzz-btn { touch-action:manipulation; -webkit-tap-highlight-color:transparent; user-select:none; -webkit-user-select:none; width:100%; padding:30px; font-size:30px; font-weight:900; font-family:var(--font-body); letter-spacing:4px; background:var(--color-accent2); color:#000; border:none; border-radius:var(--radius); cursor:pointer; transition:var(--transition); }
   .buzz-btn:hover { transform:translateY(-2px); box-shadow:0 8px 30px rgba(71,182,255,0.35); }
   .buzz-btn:active { transform:scale(0.98); }
   .buzz-btn:disabled { opacity:0.4; cursor:not-allowed; transform:none; box-shadow:none; }
@@ -653,7 +653,7 @@
       </div>
       <div class="match-elapsed" id="match-elapsed">経過: 0.00 秒</div>
 
-      <button class="buzz-btn" id="match-buzz-btn" onclick="buzz()" style="display:none;">🔔 早押し！</button>
+      <button class="buzz-btn" id="match-buzz-btn" onpointerdown="buzz()" onclick="buzz()" style="display:none;">🔔 早押し！</button>
 
       <div id="match-answer-wrap" style="display:none; margin-top:16px;">
         <div class="answer-label" id="match-buzz-elapsed" style="color:var(--color-accent);"></div>
@@ -742,7 +742,7 @@
       <div class="timer-bar-wrap"><div class="timer-bar" id="timer-bar" style="width:100%"></div></div>
     </div>
     <button class="btn-primary" id="solo-start-btn" style="width:100%; margin-bottom:14px;" onclick="soloStart()">▶ 再生してスタート</button>
-    <button class="buzz-btn" id="solo-buzz-btn" style="display:none; margin-bottom:14px;" onclick="soloBuzz()">🔔 わかった！</button>
+    <button class="buzz-btn" id="solo-buzz-btn" style="display:none; margin-bottom:14px;" onpointerdown="soloBuzz()" onclick="soloBuzz()">🔔 わかった！</button>
     <div class="answer-area" id="solo-answer-area" style="display:none;">
       <div class="answer-label" id="solo-buzz-time" style="color:var(--color-accent);">曲名を入力（よみがな・別表記もOK）</div>
       <div class="answer-input-wrap">
@@ -844,7 +844,7 @@
       <div class="form-group">
         <label class="form-label">プレイリストURL</label>
         <input class="form-input" id="pl-url" type="text" placeholder="https://www.youtube.com/playlist?list=PLxxxxxxxx">
-        <div class="form-hint">通常のプレイリスト（list=PL... / UU... など）に対応。自動生成のミックス（list=RD...）や非公開リストは取り込めません。各曲の正解には動画タイトルが仮入力されるので、後から調整してください。</div>
+        <div class="form-hint">通常のプレイリストに加え、YouTubeの自動生成ミックス（list=RD...）やYouTube Musicのプレイリストにも対応。ミックスはYouTubeの仕様上、先頭の数十曲までです。非公開リストや「高く評価した動画」など本人専用のリストは取り込めません。登録済みの曲は自動でスキップします。各曲の正解には動画タイトルが仮入力されるので、後から調整してください。</div>
       </div>
       <div class="form-group">
         <label class="form-label">ジャンル（取り込む全曲に適用）</label>
@@ -1162,23 +1162,90 @@ async function fetchAllPlaylistItems(pid){
   } while(pageToken && pages<6); // 最大300曲まで
   return items;
 }
+// 自動生成ミックス（RD...）などData APIで取れないリストは、画面外のYouTubeプレーヤーに
+// リストを読み込ませて getPlaylist() で動画IDを取り出す（YouTube側の仕様上、取れるのは先頭の数十曲まで）
+function fetchPlaylistIdsViaPlayer(pid, seedVideoId){
+  return new Promise((resolve, reject)=>{
+    if(typeof YT==='undefined' || !YT.Player){ reject(new Error('YouTubeプレーヤーを読み込めませんでした')); return; }
+    const holder=document.createElement('div');
+    holder.style.cssText='position:fixed;left:-10000px;top:0;width:320px;height:180px;pointer-events:none;';
+    const inner=document.createElement('div'); holder.appendChild(inner); document.body.appendChild(holder);
+    let player=null, done=false, poll=null, timer=null, cued=false;
+    const finish=(ids, err)=>{
+      if(done) return; done=true;
+      clearInterval(poll); clearTimeout(timer);
+      try{ player && player.destroy(); }catch(e){}
+      holder.remove();
+      err ? reject(err) : resolve(ids);
+    };
+    const readIds=()=>{ try{ const ids=player.getPlaylist(); return Array.isArray(ids)?ids.filter(Boolean):[]; }catch(e){ return []; } };
+    const opts={ width:320, height:180, playerVars:{ ...ytVars(), listType:'playlist', list:pid, autoplay:0, mute:1 },
+      events:{
+        onReady:()=>{
+          let last=-1, stable=0, ticks=0;
+          poll=setInterval(()=>{
+            ticks++;
+            const ids=readIds();
+            if(ids.length && ids.length===last){ if(++stable>=3) finish(ids); }
+            else { last=ids.length; stable=0; }
+            // 読み込まれない場合は明示的にキュー
+            if(!cued && ticks===8 && ids.length===0){ cued=true; try{ player.cuePlaylist({ listType:'playlist', list:pid }); }catch(e){} }
+          }, 300);
+        },
+        onError:(e)=>{ const ids=readIds(); ids.length ? finish(ids) : finish(null, new Error('プレイリストを読み込めませんでした（コード '+e.data+'）')); }
+      } };
+    if(seedVideoId) opts.videoId=seedVideoId;
+    player=new YT.Player(inner, opts);
+    timer=setTimeout(()=>{ const ids=readIds(); ids.length ? finish(ids) : finish(null, new Error('時間内に取得できませんでした')); }, 15000);
+  });
+}
+// 動画IDからタイトルを取得（50件ずつ）。埋め込み不可の動画は除外
+async function fetchVideoEntries(ids){
+  const out=[];
+  for(let i=0;i<ids.length;i+=50){
+    const chunk=ids.slice(i,i+50);
+    const res=await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,status&id=${chunk.join(',')}&key=${YT_API_KEY}`);
+    const data=await res.json();
+    if(data.error) throw new Error(data.error.message||'APIエラー');
+    const map={}; (data.items||[]).forEach(v=>map[v.id]=v);
+    chunk.forEach(id=>{ const v=map[id]; if(v) out.push({ vid:id, title:v.snippet&&v.snippet.title, embeddable:!(v.status&&v.status.embeddable===false) }); });
+  }
+  return out;
+}
 async function importPlaylist(){
   const list=getList(currentListId); if(!list) return;
   const url=document.getElementById('pl-url').value.trim();
   const genre=document.getElementById('pl-genre').value;
   const pid=extractPlaylistId(url);
   if(!pid){ showToast('プレイリストURL（list=... 付き）を入力してください','error'); return; }
-  if(pid.startsWith('RD')){ showToast('自動生成のミックス（RD...）は取り込めません。通常のプレイリストをご利用ください','error'); return; }
+  if(/^(LL|WL|LM|RDMM)/.test(pid)){ showToast('「高く評価した動画」「後で見る」「マイミックス」など本人専用のリストは取り込めません','error'); return; }
+  // ミックスは元になった動画（URLの v= か、RD+動画ID形式のID）を一緒に渡すと読み込みやすい
+  const seed=(url.match(/[?&]v=([A-Za-z0-9_-]{11})/)||[])[1] || (pid.match(/^RD(?:AMVM)?([A-Za-z0-9_-]{11})$/)||[])[1] || null;
   const btn=document.getElementById('pl-btn'); btn.disabled=true; btn.textContent='取得中...';
   try{
-    const items=await fetchAllPlaylistItems(pid);
-    if(items.length===0){ showToast('動画を取得できませんでした（非公開/ミックスの可能性）','error'); return; }
+    // 1) 通常のプレイリストはData APIで取得（最大300曲）
+    let entries=[];
+    try{
+      const items=await fetchAllPlaylistItems(pid);
+      entries=items.map(it=>({ vid:it.snippet&&it.snippet.resourceId&&it.snippet.resourceId.videoId, title:it.snippet&&it.snippet.title, embeddable:true }));
+    }catch(e){ entries=[]; }
+    // 2) 取れなければ（自動生成ミックス等）プレーヤー経由で取得
+    let viaPlayer=false;
+    if(entries.length===0){
+      btn.textContent='自動生成リストを解析中...';
+      const ids=await fetchPlaylistIdsViaPlayer(pid, seed);
+      entries=await fetchVideoEntries([...new Set(ids)]);
+      viaPlayer=true;
+    }
+    if(entries.length===0){ showToast('動画を取得できませんでした（非公開リストの可能性）','error'); return; }
     const u=getUser(); list.songs=list.songs||[];
-    let added=0, skipped=0;
-    for(const it of items){
-      const vid=it.snippet&&it.snippet.resourceId&&it.snippet.resourceId.videoId;
-      const title=it.snippet&&it.snippet.title;
-      if(!vid || !title || title==='Deleted video' || title==='Private video'){ skipped++; continue; }
+    const existing=new Set(list.songs.map(s=>s.videoId));
+    let added=0, skipped=0, dup=0;
+    for(const it of entries){
+      const vid=it.vid, title=it.title;
+      if(!vid || !title || title==='Deleted video' || title==='Private video' || !it.embeddable){ skipped++; continue; }
+      if(existing.has(vid)){ dup++; continue; }
+      existing.add(vid);
       list.songs.push({
         id:genUuid(), addedByUuid:u.uuid, addedByName:u.name,
         url:`https://www.youtube.com/watch?v=${vid}`, videoId:vid,
@@ -1188,7 +1255,8 @@ async function importPlaylist(){
     }
     await saveListToCloud(list);
     document.getElementById('pl-url').value='';
-    showToast(`${added}曲を取り込みました${skipped?`（${skipped}件は除外）`:''}。各曲で正解を調整してください`,'success');
+    const notes=[]; if(dup) notes.push(`${dup}曲は登録済み`); if(skipped) notes.push(`${skipped}件は再生不可などで除外`);
+    showToast(`${viaPlayer?'自動生成リストから':''}${added}曲を取り込みました${notes.length?`（${notes.join('、')}）`:''}`,'success');
   }catch(e){
     showToast('取り込み失敗: '+(e.message||e),'error');
   } finally {
@@ -1654,12 +1722,14 @@ let lastFinishedRoom=null;
 // 早押し用
 let matchAudioUnlocked=false;        // 各プレイヤー1回の音声解禁
 let matchStarted=false, matchEnded=false; // 現問題の再生状態
-let arbitrateTimer=null, arbitrateKey=null; // ホストのバズ調停
-let answererTimer=null;              // ホストの回答制限時間
+let answererTimer=null;              // ホストの回答制限時間（回答者が落ちた時の保険）
 let buzzCountdownInt=null;           // ロックアウトのカウントダウン表示
-const BUZZ_WINDOW_MS=800;            // バズ受付ウィンドウ
 const WRONG_LOCK_MS=5000;            // 誤答ペナルティ
 const ANSWER_LIMIT_MS=20000;         // 回答制限時間
+const ANSWER_GRACE_MS=2500;          // 回答者本人の時間切れ確定を待つ猶予（ホストの保険用）
+// サーバー時刻（端末ごとの時計のズレを補正。ペナルティ・回答時間の判定に使う）
+let serverTimeOffset=0;
+function serverNow(){ return Date.now()+serverTimeOffset; }
 const SONG_LIMIT=30;                 // 1問の再生上限（秒）
 
 function onYouTubeIframeAPIReady(){ YT_READY=true; }
@@ -1802,8 +1872,7 @@ function cleanupMatch(){
   if(chorusStopTimer){ clearTimeout(chorusStopTimer); chorusStopTimer=null; }
   if(chorusFadeInt){ clearInterval(chorusFadeInt); chorusFadeInt=null; }
   try{ matchPlayer && matchPlayer.setVolume(100); }catch(e){}
-  if(arbitrateTimer){ clearTimeout(arbitrateTimer); arbitrateTimer=null; } arbitrateKey=null;
-  if(answererTimer){ clearTimeout(answererTimer); answererTimer=null; }
+  if(answererTimer){ clearTimeout(answererTimer); answererTimer=null; } answererTimerKey=null;
   if(buzzCountdownInt){ clearInterval(buzzCountdownInt); buzzCountdownInt=null; }
   matchPlaying=false; matchSongStart=null; matchStarted=false; matchEnded=false;
 }
@@ -1929,10 +1998,8 @@ function renderMatch(id, room){
 
   const round=(g.rounds&&g.rounds[idx])||{};
   const answerer=round.answerer||null;
-  const buzzes=(g.buzzes&&g.buzzes[idx])||{};
-  const iBuzzed=!!buzzes[me];
   const lockUntil=(round.lockouts&&round.lockouts[me])||0;
-  const now=Date.now();
+  const now=serverNow();
 
   // 回答候補（1回だけ生成）
   const ansInput=document.getElementById('match-answer-input');
@@ -1955,8 +2022,8 @@ function renderMatch(id, room){
   }
   fxState.answerer=answerer; fxState.attempts=attemptList.length;
 
-  // 音声制御：誰かがバズ中 or 回答中なら一時停止、openなら再生
-  const someoneActive = !!answerer || Object.keys(buzzes).length>0;
+  // 音声制御：誰かが回答中なら一時停止、openなら再生
+  const someoneActive = !!answerer;
   document.getElementById('match-audio-cover').classList.toggle('answering', someoneActive);
   if(matchStarted && !matchEnded){
     try{
@@ -1964,8 +2031,8 @@ function renderMatch(id, room){
       else { if(!matchPlaying) matchPlayer.playVideo(); }
     }catch(e){}
   }
-  // openに戻ってバズが消えたら再度バズ可能に
-  if(!answerer && !iBuzzed) matchLocal.buzzSent=false;
+  // openに戻ったら再度バズ可能に（自分の取得処理が進行中の間は除く）
+  if(!answerer && !matchLocal.claiming) matchLocal.buzzSent=false;
   if(answerer!==me){ matchLocal.myTurn=false; matchLocal.answered=false; }
 
   const buzzBtn=document.getElementById('match-buzz-btn');
@@ -1977,7 +2044,23 @@ function renderMatch(id, room){
   // 回答中（誰かに回答権あり）なら回答用の残り時間バーを表示
   if(answerer && round.answerStartAt){
     const total=ANSWER_LIMIT_MS/1000;
-    const tick=()=>{ const remain=total-(Date.now()-round.answerStartAt)/1000; setTimeBar(remain, total, '⌨️ 回答'); if(remain<=0) clearAnswerBar(); };
+    const tick=()=>{
+      const remain=total-(serverNow()-round.answerStartAt)/1000;
+      setTimeBar(remain, total, '⌨️ 回答');
+      if(remain<=0){
+        clearAnswerBar();
+        // 自分の回答時間切れは自分で確定（ホストを待たない）。描画中の再入を避けるため非同期で1回だけ
+        const k=`${idx}:${round.cycle||0}`;
+        if(answerer===me && !matchLocal.answered && matchLocal.timeoutKey!==k){
+          matchLocal.timeoutKey=k;
+          setTimeout(()=>{
+            const r=STATE.rooms.find(x=>x.id===id);
+            const rd=r&&r.game&&r.game.current===idx&&r.game.rounds&&r.game.rounds[idx];
+            if(rd && rd.answerer===me && (rd.cycle||0)===(round.cycle||0) && !matchLocal.answered) sendAnswer(r, idx, '(時間切れ)', false);
+          },0);
+        }
+      }
+    };
     tick(); answerBarInt=setInterval(tick,100);
   } else if(!answerer){
     // 再生中はmatchPlayTickがバーを更新。停止中なら隠す
@@ -1996,16 +2079,16 @@ function renderMatch(id, room){
     buzzBtn.style.display='none'; ansWrap.style.display='none';
     waitEl.style.display='';
     waitEl.innerHTML=`<div style="font-size:18px; font-weight:700; color:var(--color-accent2);">🎤 ${escHtml(round.answererName||'相手')} さんが回答中...</div>`;
-  } else if(iBuzzed){
+  } else if(matchLocal.claiming){
     buzzBtn.style.display='none'; ansWrap.style.display='none';
-    waitEl.style.display=''; waitEl.textContent='🔔 早押し！ 判定待ち...';
+    waitEl.style.display=''; waitEl.textContent='🔔 早押し！ 判定中...';
   } else {
     ansWrap.style.display='none'; waitEl.style.display='none'; buzzBtn.style.display='';
     // 再生開始イベントを取りこぼしても、再生中なら押せるようにする（回答ボタンが出ない不具合の対策）
     if(!matchStarted && matchPlaying){ matchStarted=true; if(!matchTimerInt) matchTimerInt=setInterval(matchPlayTick,100); }
     if(lockUntil>now){
       buzzBtn.disabled=true;
-      const upd=()=>{ const rem=(lockUntil-Date.now())/1000; if(rem<=0){ if(buzzCountdownInt){clearInterval(buzzCountdownInt);buzzCountdownInt=null;} buzzBtn.disabled=false; buzzBtn.textContent='🔔 早押し！'; } else { buzzBtn.textContent=`⏳ ${rem.toFixed(1)} 秒ペナルティ`; } };
+      const upd=()=>{ const rem=(lockUntil-serverNow())/1000; if(rem<=0){ if(buzzCountdownInt){clearInterval(buzzCountdownInt);buzzCountdownInt=null;} buzzBtn.disabled=false; buzzBtn.textContent='🔔 早押し！'; } else { buzzBtn.textContent=`⏳ ${rem.toFixed(1)} 秒ペナルティ`; } };
       upd(); buzzCountdownInt=setInterval(upd,100);
     } else if(!matchStarted){
       buzzBtn.disabled=true; buzzBtn.textContent='♪ 再生待ち...';
@@ -2016,7 +2099,7 @@ function renderMatch(id, room){
 
   document.getElementById('match-host-reveal').style.display = isHost ? '' : 'none';
 
-  if(isHost){ maybeHostArbitrate(id, room); maybeHostResolve(id, room); }
+  if(isHost) maybeHostWatchAnswerer(id, room);
 }
 
 function resetPlayView(){
@@ -2029,22 +2112,36 @@ function resetPlayView(){
   setAudioCover(false, 'まもなく再生');
 }
 
-// 早押し：バズを書き込む（回答権はホストが調停）
+// 早押し：トランザクションで回答権を直接取得（サーバーに先に届いた人が勝ち）。
+// ホストの調停を待たないので、押してから回答欄が出るまでの遅延がほぼ通信1往復になる。
 function buzz(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
   const g=room.game; if(!g||g.phase!=='play') return;
-  const idx=g.current; const me=getUser().uuid;
+  const idx=g.current; const u=getUser(); const me=u.uuid;
   const round=(g.rounds&&g.rounds[idx])||{};
-  if(round.answerer) return;
-  if(((round.lockouts&&round.lockouts[me])||0)>Date.now()) return;
+  if(round.answerer || round.resolved) return;
+  if(((round.lockouts&&round.lockouts[me])||0)>serverNow()) return;
   if(matchLocal.buzzSent) return;
   if(!matchStarted){ showToast('再生開始までお待ちください','error'); return; }
-  matchLocal.buzzSent=true;
+  matchLocal.buzzSent=true; matchLocal.claiming=true;
   matchLocal.elapsed=matchCurrentTime();
   vibrate(40);
   try{ matchPlayer.pauseVideo(); }catch(e){}
   document.getElementById('match-buzz-btn').style.display='none';
-  db.ref(`rooms/${room.id}/game/buzzes/${idx}/${me}`).set({ name:getUser().name, elapsed:matchLocal.elapsed });
+  const elapsed=matchLocal.elapsed;
+  db.ref(`rooms/${room.id}/game/rounds/${idx}`).transaction(cur=>{
+    cur=cur||{};
+    if(cur.answerer || cur.resolved) return;                         // 既に誰かが取得 → 中止
+    if(((cur.lockouts&&cur.lockouts[me])||0)>serverNow()) return;    // ペナルティ中 → 中止
+    cur.answerer=me; cur.answererName=u.name; cur.answererElapsed=(elapsed!=null?elapsed:null);
+    cur.answerStartAt=serverNow();
+    return cur;
+  }, (err, committed)=>{
+    matchLocal.claiming=false;
+    if(err) showToast('通信エラーで早押しできませんでした','error');
+    const r=STATE.rooms.find(x=>x.id===STATE.currentRoomId);
+    if(r) renderMatch(r.id, r);   // 取得できなかった場合は「○○さんが回答中」かボタン復帰に切り替え
+  });
 }
 
 function submitMatchAnswer(){
@@ -2065,102 +2162,65 @@ function passMatch(){
   if(round.answerer!==me || matchLocal.answered) return;
   sendAnswer(room, idx, '(パス)', false);
 }
+// 回答の確定は回答者本人が行う（回答権は1人だけなので競合しない。ホストの往復を待たない）
 function sendAnswer(room, idx, answer, correct){
   matchLocal.answered=true;
-  const u=getUser();
-  db.ref(`rooms/${room.id}/game/rounds/${idx}/pendingAnswer`).set({
-    uuid:u.uuid, name:u.name, elapsed:(matchLocal.elapsed!=null?matchLocal.elapsed:null), answer, correct
-  });
-}
-
-// ===== ホスト：バズ調停（早押しウィンドウ） =====
-function maybeHostArbitrate(id, room){
-  const g=room.game; if(!g||g.phase!=='play') return;
-  const idx=g.current;
-  const round=(g.rounds&&g.rounds[idx])||{};
-  if(round.answerer) return;
-  const buzzes=(g.buzzes&&g.buzzes[idx])||{};
-  if(Object.keys(buzzes).length===0) return;
-  const key=`${id}:${idx}:${round.cycle||0}`;
-  if(arbitrateKey===key) return; // このサイクルは既にスケジュール済み
-  arbitrateKey=key;
-  if(arbitrateTimer) clearTimeout(arbitrateTimer);
-  arbitrateTimer=setTimeout(()=>{
-    arbitrateTimer=null;
-    const r=STATE.rooms.find(x=>x.id===id); if(!r) return;
-    const gg=r.game; if(!gg||gg.phase!=='play'||gg.current!==idx) return;
-    const rd=(gg.rounds&&gg.rounds[idx])||{};
-    if(rd.answerer) return;
-    const bz=(gg.buzzes&&gg.buzzes[idx])||{};
-    const now=Date.now();
-    const cands=Object.entries(bz).filter(([u])=> !(((rd.lockouts&&rd.lockouts[u])||0)>now));
-    if(cands.length===0){ arbitrateKey=null; return; }
-    cands.sort((a,b)=>((a[1].elapsed==null?1e9:a[1].elapsed))-((b[1].elapsed==null?1e9:b[1].elapsed)));
-    const [winUuid, winBuzz]=cands[0];
-    const updates={};
-    updates[`rooms/${id}/game/rounds/${idx}/answerer`]=winUuid;
-    updates[`rooms/${id}/game/rounds/${idx}/answererName`]=winBuzz.name||(r.players[winUuid]&&r.players[winUuid].name)||'?';
-    updates[`rooms/${id}/game/rounds/${idx}/answererElapsed`]=(winBuzz.elapsed!=null?winBuzz.elapsed:null);
-    updates[`rooms/${id}/game/rounds/${idx}/answerStartAt`]=firebase.database.ServerValue.TIMESTAMP;
-    updates[`rooms/${id}/game/buzzes/${idx}`]=null;
-    db.ref().update(updates);
-    if(answererTimer) clearTimeout(answererTimer);
-    answererTimer=setTimeout(()=>hostForcePass(id, idx, winUuid), ANSWER_LIMIT_MS);
-  }, BUZZ_WINDOW_MS);
-}
-
-// ===== ホスト：回答の判定 =====
-let hostHandledKey=null;
-function maybeHostResolve(id, room){
-  const g=room.game; if(!g||g.phase!=='play') return;
-  const idx=g.current;
-  const round=(g.rounds&&g.rounds[idx])||{};
-  const pa=round.pendingAnswer;
-  if(!pa) return;
-  const key=`${id}:${idx}:${round.cycle||0}:${pa.uuid}:${pa.answer}`;
-  if(hostHandledKey===key) return;
-  hostHandledKey=key;
-  if(answererTimer){ clearTimeout(answererTimer); answererTimer=null; }
-  db.ref(`rooms/${id}/game/rounds/${idx}/attempts`).push({
-    uuid:pa.uuid, name:pa.name, elapsed:(pa.elapsed!=null?pa.elapsed:null), answer:pa.answer, correct:!!pa.correct
-  });
-  if(pa.correct){
-    hostReveal(id, room, pa.uuid);
+  const u=getUser(); const id=room.id;
+  const g=room.game; const round=(g.rounds&&g.rounds[idx])||{};
+  const base=`rooms/${id}/game/rounds/${idx}`;
+  const attemptKey=db.ref(base+'/attempts').push().key;
+  const attempt={ uuid:u.uuid, name:u.name, elapsed:(round.answererElapsed!=null?round.answererElapsed:(matchLocal.elapsed!=null?matchLocal.elapsed:null)), answer, correct:!!correct };
+  const updates={ [`${base}/attempts/${attemptKey}`]:attempt };
+  if(correct){
+    hostReveal(id, room, u.uuid, updates);   // 採点して結果発表まで一括で書き込む
   } else {
-    const updates={};
-    updates[`rooms/${id}/game/rounds/${idx}/answerer`]=null;
-    updates[`rooms/${id}/game/rounds/${idx}/answererName`]=null;
-    updates[`rooms/${id}/game/rounds/${idx}/answererElapsed`]=null;
-    updates[`rooms/${id}/game/rounds/${idx}/lockouts/${pa.uuid}`]=Date.now()+WRONG_LOCK_MS;
-    updates[`rooms/${id}/game/rounds/${idx}/cycle`]=(round.cycle||0)+1;
-    updates[`rooms/${id}/game/rounds/${idx}/pendingAnswer`]=null;
+    Object.assign(updates, releaseAnswererUpdates(base, round, u.uuid));
     db.ref().update(updates);
   }
 }
-// 回答制限時間切れ → パス扱い
+// 誤答・パス・時間切れ：回答権を解放してペナルティを付与（曲は再開される）
+function releaseAnswererUpdates(base, round, uuid){
+  return {
+    [`${base}/answerer`]:null, [`${base}/answererName`]:null, [`${base}/answererElapsed`]:null, [`${base}/answerStartAt`]:null,
+    [`${base}/lockouts/${uuid}`]:serverNow()+WRONG_LOCK_MS,
+    [`${base}/cycle`]:(round.cycle||0)+1
+  };
+}
+
+// ===== ホスト：回答者が通信切れ等で時間内に確定しなかった時の保険 =====
+let answererTimerKey=null;
+function maybeHostWatchAnswerer(id, room){
+  const g=room.game; if(!g||g.phase!=='play') return;
+  const idx=g.current;
+  const round=(g.rounds&&g.rounds[idx])||{};
+  const key=round.answerer?`${id}:${idx}:${round.cycle||0}:${round.answerer}`:null;
+  if(key===answererTimerKey) return;
+  answererTimerKey=key;
+  if(answererTimer){ clearTimeout(answererTimer); answererTimer=null; }
+  if(!key) return;
+  const startAt=round.answerStartAt||serverNow();
+  const wait=Math.max(0, startAt+ANSWER_LIMIT_MS+ANSWER_GRACE_MS-serverNow());
+  const uuid=round.answerer;
+  answererTimer=setTimeout(()=>hostForcePass(id, idx, uuid), wait);
+}
 function hostForcePass(id, idx, uuid){
   const room=STATE.rooms.find(r=>r.id===id); if(!room) return;
   const g=room.game; if(!g||g.phase!=='play'||g.current!==idx) return;
   const round=(g.rounds&&g.rounds[idx])||{};
   if(round.answerer!==uuid) return;
-  db.ref(`rooms/${id}/game/rounds/${idx}/attempts`).push({ uuid, name:round.answererName||'?', elapsed:(round.answererElapsed!=null?round.answererElapsed:null), answer:'(時間切れ)', correct:false });
-  const updates={};
-  updates[`rooms/${id}/game/rounds/${idx}/answerer`]=null;
-  updates[`rooms/${id}/game/rounds/${idx}/answererName`]=null;
-  updates[`rooms/${id}/game/rounds/${idx}/answererElapsed`]=null;
-  updates[`rooms/${id}/game/rounds/${idx}/lockouts/${uuid}`]=Date.now()+WRONG_LOCK_MS;
-  updates[`rooms/${id}/game/rounds/${idx}/cycle`]=(round.cycle||0)+1;
+  const base=`rooms/${id}/game/rounds/${idx}`;
+  const attemptKey=db.ref(base+'/attempts').push().key;
+  const updates={ [`${base}/attempts/${attemptKey}`]:{ uuid, name:round.answererName||'?', elapsed:(round.answererElapsed!=null?round.answererElapsed:null), answer:'(時間切れ)', correct:false } };
+  Object.assign(updates, releaseAnswererUpdates(base, round, uuid));
   db.ref().update(updates);
 }
-// 曲が30秒に達し誰も回答しなかった → 正解者なしで結果へ（ホスト）
+// 曲が再生上限に達し誰も回答しなかった → 正解者なしで結果へ（ホスト）
 function maybeHostTimeout(id, room){
   if(room.hostUuid!==getUser().uuid) return;
   const g=room.game; if(!g||g.phase!=='play') return;
   const idx=g.current;
   const round=(g.rounds&&g.rounds[idx])||{};
   if(round.answerer) return;                              // 回答中なら待つ
-  const buzzes=(g.buzzes&&g.buzzes[idx])||{};
-  if(Object.keys(buzzes).length>0) return;                // 調停待ちなら待つ
   if(matchTimerInt){ clearInterval(matchTimerInt); matchTimerInt=null; } // 多重発火防止
   hostReveal(id, room, null);
 }
@@ -2169,11 +2229,12 @@ function hostRevealNow(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
   hostReveal(room.id, room, null);
 }
-function hostReveal(id, room, winnerUuid){
+// 結果発表へ（ホストの締め切り・時間切れ、または正解者本人が呼ぶ）。extraUpdates は同時に書く追加パス
+function hostReveal(id, room, winnerUuid, extraUpdates){
   const g=room.game; if(!g||g.phase!=='play') return;
   const idx=g.current;
   const { scores, roundResult }=computeRoundResult(room, idx, winnerUuid||null);
-  const updates={};
+  const updates={ ...(extraUpdates||{}) };
   updates[`rooms/${id}/game/scores`]=scores;
   updates[`rooms/${id}/game/roundResult/${idx}`]=roundResult;
   updates[`rooms/${id}/game/rounds/${idx}/resolved`]=true;
@@ -2779,6 +2840,7 @@ function boot(){
     return;
   }
 
+  db.ref('.info/serverTimeOffset').on('value', snap=>{ serverTimeOffset=snap.val()||0; });
   // 接続状態
   db.ref('.info/connected').on('value', snap=>{
     const online=snap.val()===true;
