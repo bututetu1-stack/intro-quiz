@@ -2265,7 +2265,7 @@ const VOCALOID_RE=/初音ミク|鏡音リン|鏡音レン|巡音ルカ|\bMEIKO\b
 const VOCALOID_ALL_RE=new RegExp(VOCALOID_RE.source,'gi');
 const COVER_MARK_RE=/covered by|cover(ed)?|カバー|歌ってみた|歌った|うたった|弾いてみた|叩いてみた|踊ってみた/i;
 function songKey(s){ return String(s||'').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu,''); }
-function isNoisePart(s){ return songKey(String(s||'').replace(SONG_NOISE_RE,' ')).length===0; }
+function isNoisePart(s){ return songKey(String(s||'').normalize('NFKC').replace(SONG_NOISE_RE,' ')).length===0; }   // 全角の「ＭＶ」も飾り
 function stripFeat(s){ return String(s).replace(/\s*[\(（]?\s*(feat\.?|ft\.|featuring|prod\.?|produced by)\s.*$/i,'').replace(/\s*(feat\.|ft\.)\S.*$/i,'').trim(); }
 function hasLatin(s){ return /[A-Za-z]/.test(String(s).normalize('NFKC')); }
 function hasJapanese(s){ return /[\u3040-\u30ff\u3400-\u9fff]/.test(String(s)); }
@@ -2394,6 +2394,7 @@ function guessSongName(rawTitle, channelTitle){
       const sepNear=(p.sep||(parts[i+1]&&parts[i+1].sep)||'');
       if(base!==p.text.trim() && sepNear==='/') sc+=2;     // 「曲名 / ○○P feat.初音ミク」の後ろ側
       if(/([\u3040-\u30ff\u3400-\u9fff]|[a-z])P[)）]?$/.test(base)) sc+=2; // ○○P（ボカロP）
+      if(/[^\s(（]feat\.?/i.test(p.text)) sc+=2;   // 「れるりりfeat.初音ミク」：名前に feat. がくっついている部分は歌手
       if(/\s[x×]\s|×|\s&\s|\swith\s/i.test(base)) sc+=1;    // コラボ表記
       p.score=sc; p.idx=i;
     });
@@ -2404,7 +2405,7 @@ function guessSongName(rawTitle, channelTitle){
     // 日本語と英語の併記（「米津玄師 - 毎日　Kenshi Yonezu - Mainichi」など）は日本語側を曲名に
     const jp=rest.filter(p=>hasJapanese(p.text)), en=rest.filter(p=>!hasJapanese(p.text));
     const allSp=rest.slice(1).every(p=>p.sep==='sp');
-    if(jp.length && en.length && (res.artistFound || rest.length>=3 || allSp)){ if(res.artistFound) res.others=en.map(p=>p.text); rest=jp; }
+    if(jp.length && en.length && (res.artistFound || rest.length>=3 || allSp)){ if(res.artistFound) res.others=en.filter(p=>stripFeat(p.text)===p.text.trim()).map(p=>p.text); rest=jp; }   // feat. 付きの英語の部分は歌手なので別名にしない
     let pick;
     if(rest.length===1) pick=rest[0];
     else {
