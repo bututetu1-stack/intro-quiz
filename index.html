@@ -411,6 +411,8 @@
   .delta.up { color:#062b1d; background:var(--color-correct); } .delta.down { color:#fff; background:var(--color-wrong); }
   .rank-move.up { color:var(--color-correct); } .rank-move.down { color:var(--color-wrong); }
   .song-search { max-width:220px; border-radius:999px; padding:8px 14px; }
+  .song-row.is-broken { border-color:rgba(255,93,108,0.5); background:rgba(255,93,108,0.06); }
+  .broken-tag { color:var(--color-wrong); font-weight:800; }
   .fallback-play { display:block; margin:10px auto 0; }
 
   /* ===== 結果（ソロ） ===== */
@@ -1220,6 +1222,7 @@
     <div class="section-head" style="margin-top:8px;">
       <h2>🎵 曲 <span id="detail-song-count" style="color:var(--color-muted); font-size:14px;">0 曲</span></h2>
       <input class="form-input song-search" id="song-search" type="search" placeholder="🔍 曲を検索" oninput="renderDetailSongs()" style="display:none;">
+      <button class="btn-sub" id="detail-health" onclick="checkListHealth()" style="padding:8px 14px; font-size:13px;" title="削除・非公開・埋め込み禁止・日本で視聴不可の曲がないか調べます">🩺 再生チェック</button>
       <button class="btn-sub" id="detail-autoname" onclick="openAutoname()" style="padding:8px 14px; font-size:13px;" title="動画タイトルから曲名を判定し、よみがなも付けて、正解をまとめて整えます">🪄 曲名・よみを自動入力</button>
     </div>
     <div id="detail-songs"></div>
@@ -1650,6 +1653,30 @@ function duplicateList(){
   const copy={ id, ownerUuid:u.uuid, ownerName:u.name, name:src.name+'（コピー）', visibility:'personal', songs:(src.songs||[]).map(s=>({ ...s, id:genUuid() })), createdAt:Date.now() };
   saveListToCloud(copy).then(()=>{ showToast('自分用（個人用）のリストとして複製しました','success'); openListDetail(id); }).catch(()=>showToast('複製できませんでした','error'));
 }
+// リストの再生チェック：再生できない曲に印を付け、作成者ならまとめて削除できる
+const listHealth={};   // listId → { videoId: 理由 }（問題のある曲だけ）
+async function checkListHealth(){
+  const list=getList(currentListId); if(!list || !(list.songs||[]).length) return;
+  const btn=document.getElementById('detail-health'); if(btn.disabled) return;
+  btn.disabled=true; btn.textContent='チェック中...';
+  let hp;
+  try{ hp=await fetchVideoHealth([...new Set(list.songs.map(s=>s.videoId))]); }
+  catch(e){ showToast('YouTubeの情報を取得できませんでした','error'); return; }
+  finally{ btn.disabled=false; btn.textContent='🩺 再生チェック'; }
+  const bad={}; Object.entries(hp).forEach(([v,pr])=>{ if(pr) bad[v]=pr; });
+  listHealth[list.id]=bad;
+  renderDetailSongs();
+  const broken=list.songs.filter(s=>bad[s.videoId]);
+  if(!broken.length){ showToast('すべての曲が再生できそうです','success'); return; }
+  const names=broken.slice(0,6).map(s=>`「${(s.answers||[])[0]||s.title}」（${PROBLEM_LABEL[bad[s.videoId]]}）`).join('、')+(broken.length>6?` ほか${broken.length-6}曲`:'');
+  if(list.ownerUuid===getUser().uuid){
+    openConfirm(`${broken.length}曲は再生できない可能性があります`, names+'。まとめてリストから削除しますか？（⚠ の付いた曲）', ()=>{
+      const cur=getList(list.id); if(!cur) return;
+      cur.songs=(cur.songs||[]).filter(s=>!bad[s.videoId]);
+      saveListToCloud(cur).then(()=>{ listHealth[list.id]={}; showToast(`${broken.length}曲を削除しました`,'success'); });
+    }, 'まとめて削除');
+  } else showToast(`${broken.length}曲は再生できない可能性があります（⚠ の付いた曲）`,'error');
+}
 // 曲の追加方法のタブ（プレイリスト／URLをまとめて／1曲ずつ）
 let addTabLast='playlist';
 function setAddTab(tab){
@@ -1719,17 +1746,20 @@ async function bulkAddSongs(){
   let meta={};
   try{ (await fetchVideoEntries(ids)).forEach(e=>meta[e.vid]=e); }catch(e){ meta=null; }
   finally{ btn.disabled=false; btn.textContent='まとめて追加'; }
-  const newIds=[];
+  const newIds=[]; let bad=0;
   for(const videoId of ids){
     const m=meta&&meta[videoId];
+    if(meta && (!m || m.problem)){ bad++; continue; }   // 削除・非公開・埋め込み禁止・日本で視聴不可
     const song=(m && m.title) ? songFromVideo(videoId, m.title, m.channel, '', u)
       : { id:genUuid(), addedByUuid:u.uuid, addedByName:u.name, url:`https://www.youtube.com/watch?v=${videoId}`, videoId, answers:['（未設定）'], yomigana:[], title:'（要編集）'+videoId, genre:'', createdAt:Date.now() };
     list.songs.push(song); newIds.push(song.id);
   }
+  if(bad) skipNotes.push(`${bad}曲は再生できないため除外`);
+  if(!newIds.length){ showToast(`追加できる曲がありません（${skipNotes.join('、')}）`,'error'); return; }
   await saveListToCloud(list);
   document.getElementById('bulk-urls').value='';
   const note=meta?'曲名は自動判定しています':'動画情報を取得できなかったため、正解は後から編集してください';
-  showToast(`${ids.length}曲を追加しました${skipNotes.length?`（${skipNotes.join('、')}）`:''}。${note}`,'success');
+  showToast(`${newIds.length}曲を追加しました${skipNotes.length?`（${skipNotes.join('、')}）`:''}。${note}`,'success');
   fillYomiganaLater(list.id, newIds);
 }
 
@@ -2127,17 +2157,33 @@ function fetchPlaylistIdsViaPlayer(pid, seedVideoId){
   });
 }
 // 動画IDからタイトルを取得（50件ずつ）。埋め込み不可の動画は除外
+// 再生できない理由（なければ null）。この画面は日本から遊ぶ前提で、日本で視聴できない動画も除く
+function videoProblem(v){
+  if(!v) return 'deleted';
+  const st=v.status||{}, rr=(v.contentDetails||{}).regionRestriction;
+  if(st.privacyStatus==='private') return 'private';
+  if(st.embeddable===false) return 'embed';
+  if(rr && ((rr.blocked||[]).includes('JP') || (Array.isArray(rr.allowed) && !rr.allowed.includes('JP')))) return 'region';
+  return null;
+}
+const PROBLEM_LABEL={ deleted:'削除済み・非公開', private:'非公開', embed:'埋め込み禁止', region:'日本では再生不可' };
 async function fetchVideoEntries(ids){
   const out=[];
   for(let i=0;i<ids.length;i+=50){
     const chunk=ids.slice(i,i+50);
-    const res=await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,status&id=${chunk.join(',')}&key=${YT_API_KEY}`);
+    const res=await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,status,contentDetails&id=${chunk.join(',')}&key=${YT_API_KEY}`);
     const data=await res.json();
     if(data.error) throw new Error(data.error.message||'APIエラー');
     const map={}; (data.items||[]).forEach(v=>map[v.id]=v);
-    chunk.forEach(id=>{ const v=map[id]; if(v) out.push({ vid:id, title:v.snippet&&v.snippet.title, channel:(v.snippet&&v.snippet.channelTitle)||'', embeddable:!(v.status&&v.status.embeddable===false) }); });
+    chunk.forEach(id=>{ const v=map[id]; if(v){ const problem=videoProblem(v); out.push({ vid:id, title:v.snippet&&v.snippet.title, channel:(v.snippet&&v.snippet.channelTitle)||'', embeddable:!problem, problem }); } });
   }
   return out;
+}
+// 動画IDごとの「再生できない理由」（問題なしは null、見つからない動画は deleted）
+async function fetchVideoHealth(ids){
+  const res={}; ids.forEach(id=>res[id]='deleted');
+  (await fetchVideoEntries(ids)).forEach(e=>{ res[e.vid]=e.problem||null; });
+  return res;
 }
 async function importPlaylist(){
   const list=getList(currentListId); if(!list) return;
@@ -2165,6 +2211,10 @@ async function importPlaylist(){
       viaPlayer=true;
     }
     if(entries.length===0){ showToast('動画を取得できませんでした（非公開リストの可能性）','error'); return; }
+    if(!viaPlayer){
+      btn.textContent='再生できるか確認中...';
+      try{ const hp=await fetchVideoHealth([...new Set(entries.map(e=>e.vid).filter(Boolean))]); entries.forEach(e=>{ if(e.vid && hp[e.vid]) e.embeddable=false; }); }catch(e){}
+    }
     const u=getUser(); list.songs=list.songs||[];
     const existing=new Set(list.songs.map(s=>s.videoId));
     const seen=new Set();  // ミックスは同じ曲が繰り返し返るので、取り込み内の重複は件数に数えない
@@ -2253,12 +2303,13 @@ function renderDetailSongs(){
   el.innerHTML=shown.map(({s,i})=>{
     const sub=[ (s.answers||[]).join(' / '), (s.yomigana||[]).length?`よみ: ${s.yomigana.join(' / ')}`:'' , s.chorusStart!=null?`サビ: ${s.chorusStart}秒`:''].filter(Boolean).join('　');
     const thumb=`https://img.youtube.com/vi/${s.videoId}/mqdefault.jpg`;
-    return `<div class="song-row">
+    const problem=(listHealth[list.id]||{})[s.videoId];
+    return `<div class="song-row${problem?' is-broken':''}">
       <div class="song-num">${i+1}</div>
       <img class="song-thumb" src="${thumb}" alt="" loading="lazy" onerror="this.style.display='none'">
       <div class="song-info">
         <a class="song-title song-link" href="${escAttr(s.url)}" target="_blank" rel="noopener" title="元の動画を開く">${escHtml(s.title)} ↗</a>
-        <div class="song-sub">${escHtml(sub)}</div>
+        <div class="song-sub">${problem?`<span class="broken-tag">⚠ ${PROBLEM_LABEL[problem]}</span> `:''}${escHtml(sub)}</div>
       </div>
       <div class="song-meta">${s.genre?`<span class="q-tag">${escHtml(s.genre)}</span>`:''}${editable?`<button class="song-del" onclick="openEditSong('${s.id}')" title="編集">✎</button><button class="song-del" onclick="deleteSong('${s.id}')">✕</button>`:''}</div>
     </div>`;
