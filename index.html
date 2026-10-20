@@ -1375,6 +1375,9 @@ const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 
 
 function lsGet(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+// データベースの値は誰でも書き換えられるので、HTML に入れる前に整える
+function safeId(v){ v=String(v??''); return /^[A-Za-z0-9_-]{1,64}$/.test(v)?v:''; }        // onclick や URL に入れる ID
+function safeNum(v, d=0){ if(v==null||v==="") return d; const n=Number(v); return Number.isFinite(n)?n:d; }              // 数値（文字列が入っていても表示を壊さない）
 function objToArr(obj){ return obj ? Object.keys(obj).map(k => ({ ...obj[k], id: k })) : []; }
 function genUuid(){
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -1441,7 +1444,7 @@ function joinFromHome(){
 function renderHomeLists(){
   const el=document.getElementById('home-lists'); if(!el) return;
   const lists=visibleLists().filter(l=>(l.songs||[]).length>0).sort((a,b)=>(b.songs||[]).length-(a.songs||[]).length).slice(0,4);
-  el.innerHTML=lists.length?lists.map(l=>listCardHtml(l,{ onclick:`openListDetail('${l.id}')` })).join('')
+  el.innerHTML=lists.length?lists.map(l=>listCardHtml(l,{ onclick:`openListDetail('${safeId(l.id)}')` })).join('')
     :'<div class="empty-list" style="grid-column:1/-1;">まだ曲リストがありません。「曲リスト」から作ってみましょう。</div>';
 }
 // ===== 曲リストのカード（曲のサムネをジャケット風に2×2で並べる） =====
@@ -1449,13 +1452,13 @@ function listCardHtml(l, opts){
   const me=getUser().uuid; const songs=l.songs||[];
   const vis=l.visibility==='public'?'<span class="badge badge-public">🌐 公開</span>':'<span class="badge badge-personal">🔒 個人用</span>';
   const mine=l.ownerUuid===me?'<span class="badge badge-mine">自分</span>':'';
-  const pics=songs.slice(0,4).map(s=>s.videoId).filter(Boolean);
+  const pics=songs.slice(0,4).map(s=>safeId(s.videoId)).filter(Boolean);
   const hue=[...(l.id||'')].reduce((h,c)=>(h*31+c.charCodeAt(0))%360,0);
   const cover=pics.length
     ? `<div class="list-cover${pics.length<4?' single':''}" style="--cover-a:hsl(${hue} 55% 35%); --cover-b:hsl(${(hue+60)%360} 50% 18%);">${(pics.length<4?pics.slice(0,1):pics).map(v=>`<img src="https://img.youtube.com/vi/${v}/mqdefault.jpg" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`).join('')}</div>`
     : `<div class="list-cover single" style="--cover-a:hsl(${hue} 55% 35%); --cover-b:hsl(${(hue+60)%360} 50% 18%);"><div class="list-cover-empty">🎵</div></div>`;
-  const play=songs.length?`<button class="list-play" title="このリストでひとりで遊ぶ" onclick="event.stopPropagation(); quickPlaySolo('${l.id}')">▶</button>`:'';
-  return `<div class="list-card${opts&&opts.selected?' selected':''}" role="button" tabindex="0" data-list="${l.id}" onclick="${opts&&opts.onclick||''}">
+  const play=songs.length?`<button class="list-play" title="このリストでひとりで遊ぶ" onclick="event.stopPropagation(); quickPlaySolo('${safeId(l.id)}')">▶</button>`:'';
+  return `<div class="list-card${opts&&opts.selected?' selected':''}" role="button" tabindex="0" data-list="${safeId(l.id)}" onclick="${opts&&opts.onclick||''}">
     <div style="position:relative;">${cover}<div class="list-badges">${vis}${mine}</div>${opts&&opts.noPlay?'':play}</div>
     <div class="list-body"><div class="list-card-name" title="${escAttr(l.name)}">${escHtml(l.name)}</div><div class="list-card-meta">${songs.length} 曲 ・ by ${escHtml(l.ownerName||'?')}</div></div>
   </div>`;
@@ -2286,7 +2289,7 @@ function renderLists(){
   if(lists.length===0){ grid.innerHTML='<div class="empty-list" style="grid-column:1/-1;">まだリストがありません。「＋ 新しいリスト」から作成してください。</div>'; return; }
   // 自分のリストを先に、あとは曲数の多い順
   const sorted=[...lists].sort((a,b)=>((b.ownerUuid===me)-(a.ownerUuid===me)) || ((b.songs||[]).length-(a.songs||[]).length));
-  grid.innerHTML=sorted.map(l=>listCardHtml(l,{ onclick:`openListDetail('${l.id}')` })).join('');
+  grid.innerHTML=sorted.map(l=>listCardHtml(l,{ onclick:`openListDetail('${safeId(l.id)}')` })).join('');
 }
 function renderDetailSongs(){
   const list=getList(currentListId); if(!list) return;
@@ -2302,16 +2305,16 @@ function renderDetailSongs(){
   if(q && !shown.length){ el.innerHTML='<div class="empty-list">見つかりませんでした</div>'; return; }
   el.innerHTML=shown.map(({s,i})=>{
     const sub=[ (s.answers||[]).join(' / '), (s.yomigana||[]).length?`よみ: ${s.yomigana.join(' / ')}`:'' , s.chorusStart!=null?`サビ: ${s.chorusStart}秒`:''].filter(Boolean).join('　');
-    const thumb=`https://img.youtube.com/vi/${s.videoId}/mqdefault.jpg`;
+    const thumb=`https://img.youtube.com/vi/${safeId(s.videoId)}/mqdefault.jpg`;
     const problem=(listHealth[list.id]||{})[s.videoId];
     return `<div class="song-row${problem?' is-broken':''}">
       <div class="song-num">${i+1}</div>
       <img class="song-thumb" src="${thumb}" alt="" loading="lazy" onerror="this.style.display='none'">
       <div class="song-info">
-        <a class="song-title song-link" href="${escAttr(s.url)}" target="_blank" rel="noopener" title="元の動画を開く">${escHtml(s.title)} ↗</a>
+        <a class="song-title song-link" href="https://www.youtube.com/watch?v=${safeId(s.videoId)}" target="_blank" rel="noopener" title="元の動画を開く">${escHtml(s.title)} ↗</a>
         <div class="song-sub">${problem?`<span class="broken-tag">⚠ ${PROBLEM_LABEL[problem]}</span> `:''}${escHtml(sub)}</div>
       </div>
-      <div class="song-meta">${s.genre?`<span class="q-tag">${escHtml(s.genre)}</span>`:''}${editable?`<button class="song-del" onclick="openEditSong('${s.id}')" title="編集">✎</button><button class="song-del" onclick="deleteSong('${s.id}')">✕</button>`:''}</div>
+      <div class="song-meta">${s.genre?`<span class="q-tag">${escHtml(s.genre)}</span>`:''}${editable?`<button class="song-del" onclick="openEditSong('${safeId(s.id)}')" title="編集">✎</button><button class="song-del" onclick="deleteSong('${safeId(s.id)}')">✕</button>`:''}</div>
     </div>`;
   }).join('');
 }
@@ -2327,7 +2330,7 @@ function renderRoomsList(){
   el.innerHTML=rooms.map(r=>{
     const ps=r.players?Object.values(r.players):[];
     const stack=ps.slice(0,5).map(p=>`<span class="chip-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</span>`).join('');
-    return `<div class="room-row"><div class="avatar-stack">${stack}</div><div class="room-info"><div class="room-name">${escHtml(r.name)}</div><div class="room-meta">👑 ${escHtml(r.hostName||'?')} ・ ${ps.length}人が参加中</div></div><button class="btn-primary" style="padding:10px 22px; font-size:14px;" onclick="joinRoom('${r.id}')">参加</button></div>`;
+    return `<div class="room-row"><div class="avatar-stack">${stack}</div><div class="room-info"><div class="room-name">${escHtml(r.name)}</div><div class="room-meta">👑 ${escHtml(r.hostName||'?')} ・ ${ps.length}人が参加中</div></div><button class="btn-primary" style="padding:10px 22px; font-size:14px;" onclick="joinRoom('${safeId(r.id)}')">参加</button></div>`;
   }).join('');
 }
 
@@ -2453,11 +2456,11 @@ function settingsSummaryHtml(s){
   const ids=Array.isArray(s.listIds)?s.listIds:(s.listId?[s.listId]:[]);
   if(!s.yaminabe && !ids.length) return '<span class="pill">ホストが設定中です</span>';
   const names=s.yaminabe?['闇鍋（全リストから）']:ids.map(i=>{ const l=getList(i); return l?l.name:'（非公開のリスト）'; });
-  const count=(s.count??10);
+  const count=safeNum(s.count,10);
   return [
     `<span class="pill">🎵 ${escHtml(names.join('・'))}</span>`,
     `<span class="pill">${count>0?count+'問':'全曲'}</span>`,
-    `<span class="pill">⏱ ${s.songLimit||30}秒</span>`,
+    `<span class="pill">⏱ ${safeNum(s.songLimit,30)||30}秒</span>`,
     `<span class="pill">${s.suggestOn===false?'回答候補なし':'回答候補あり'}</span>`,
     choice,
     s.chorusOn?'<span class="pill">サビ再生</span>':'',
@@ -3232,7 +3235,7 @@ function renderMatch(id, room){
   if(answerer===me && !matchLocal.answered){
     buzzBtn.style.display='none'; waitEl.style.display='none'; ansWrap.style.display='';
     const t=round.answererElapsed;
-    document.getElementById('match-buzz-elapsed').textContent = t!=null?`あなたに回答権！ (${t.toFixed(2)} 秒で早押し)`:'あなたに回答権！';
+    document.getElementById('match-buzz-elapsed').textContent = t!=null?`あなたに回答権！ (${safeNum(t).toFixed(2)} 秒で早押し)`:'あなたに回答権！';
     // 4択モードなら選択肢のボタン、そうでなければ入力欄
     const qq=g.questions[idx]; const opts=((room.settings||{}).choiceMode && Array.isArray(qq.options))?qq.options:null;
     if(!matchLocal.myTurn) document.getElementById('match-choice-grid').dataset.key='';   // 2回目の回答権では押せる状態から描き直す
@@ -3485,9 +3488,9 @@ function renderReveal(id, room){
   const rt=document.getElementById('reveal-thumb'), rtSrc=`https://img.youtube.com/vi/${g.questions[idx].videoId}/hqdefault.jpg`;
   if(rt.getAttribute('src')!==rtSrc){ rt.style.visibility=''; rt.src=rtSrc; }
   let winLine='';
-  if(rr.winnerName) winLine=`🏆 ${escHtml(rr.winnerName)} さんが正解！ (+${rr.winnerPts})`;
+  if(rr.winnerName) winLine=`🏆 ${rr.winnerName} さんが正解！ (+${safeNum(rr.winnerPts)})`;
   else winLine='正解者なし';
-  if(rr.adderPenalty) winLine+=` ／ ${escHtml(rr.penalizedAdderName||'追加者')} は自分の曲を外して ${rr.adderPenalty} 点`;
+  if(rr.adderPenalty) winLine+=` ／ ${rr.penalizedAdderName||'追加者'} は自分の曲を外して ${safeNum(rr.adderPenalty)} 点`;
   document.getElementById('reveal-winner').textContent=winLine;
 
   // 演出：結果発表の瞬間に1回だけ
@@ -3505,7 +3508,7 @@ function renderReveal(id, room){
       <span>${s.correct?'✅':'❌'}</span>
       <span style="font-weight:700;">${escHtml(s.name||'?')}</span>
       <span style="color:var(--color-muted);">「${escHtml(s.answer||'')}」</span>
-      <span class="sub-time">${s.elapsed!=null?s.elapsed.toFixed(2)+'秒':'—'}</span>
+      <span class="sub-time">${s.elapsed!=null?safeNum(s.elapsed).toFixed(2)+'秒':'—'}</span>
     </div>`).join('') : '<div class="sub-row" style="color:var(--color-muted);">回答なし</div>';
 
   // この問題の前の得点（前の問題の結果発表で見た得点）と比べて、増えた点数と順位の上下を出す
@@ -3607,7 +3610,7 @@ function renderFinished(id, room){
       const attempts=round.attempts?Object.values(round.attempts):[];
       const winnerStr=rr.winnerName?`<span class="song-log-winner">🏆 ${escHtml(rr.winnerName)}</span>`:`<span style="color:var(--color-muted);font-size:12px;">正解者なし</span>`;
       const attemptRows=attempts.sort((a,b)=>((a.elapsed==null?1e9:a.elapsed))-((b.elapsed==null?1e9:b.elapsed)))
-        .map(a=>`<span style="font-size:11px;color:var(--color-muted);">${a.correct?'✅':'❌'}${escHtml(a.name||'?')}${a.elapsed!=null?' '+a.elapsed.toFixed(2)+'秒':''}</span>`).join('　');
+        .map(a=>`<span style="font-size:11px;color:var(--color-muted);">${a.correct?'✅':'❌'}${escHtml(a.name||'?')}${a.elapsed!=null?' '+safeNum(a.elapsed).toFixed(2)+'秒':''}</span>`).join('　');
       return `<div class="song-log-row"><div class="song-log-num">${i+1}</div><div class="song-log-title">${escHtml(q.title||'?')}<br>${winnerStr}${attemptRows?`<br>${attemptRows}`:''}</div>${q.genre?`<span class="q-tag">${escHtml(q.genre)}</span>`:''}</div>`;
     }).join('');
   }
@@ -3680,7 +3683,7 @@ function renderScoreChips(elId, room, subsForRound){
   const scores=room.game?.scores||{};
   const now=Date.now();
   players.forEach(p=>{
-    const k=room.id+':'+p.uuid, cur=scores[p.uuid]||0, prev=chipPrevScores[k];
+    const k=room.id+':'+p.uuid, cur=safeNum(scores[p.uuid]), prev=chipPrevScores[k];
     if(prev!=null && cur!==prev) chipFx[k]={ cls:cur>prev?'bump':'drop', until:now+700 };
     chipPrevScores[k]=cur;
   });
@@ -3689,7 +3692,7 @@ function renderScoreChips(elId, room, subsForRound){
     const fx=chipFx[room.id+':'+p.uuid]; const fxCls=(fx&&fx.until>now)?fx.cls:'';
     return `<span class="score-chip ${p.uuid===me?'me':''} ${done?'done':''} ${fxCls}">
       <span class="chip-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</span>
-      <span>${escHtml(p.name||'?')}</span><span class="score-val">${scores[p.uuid]||0}</span>
+      <span>${escHtml(p.name||'?')}</span><span class="score-val">${safeNum(scores[p.uuid])}</span>
     </span>`;
   }).join('');
   const el=document.getElementById(elId);
@@ -3698,7 +3701,7 @@ function renderScoreChips(elId, room, subsForRound){
 
 function sortedStandings(room){
   const scores=room.game?.scores||{};
-  return Object.values(room.players||{}).map(p=>({ uuid:p.uuid, name:p.name||'?', score:scores[p.uuid]||0 }))
+  return Object.values(room.players||{}).map(p=>({ uuid:p.uuid, name:p.name||'?', score:safeNum(scores[p.uuid]) }))
     .sort((a,b)=>b.score-a.score);
 }
 let finishFxKey='';
@@ -3726,7 +3729,7 @@ function renderAwards(room){
   const nameOf=a=>names[a.uuid]||a.name||'?';
   const awards=[];
   const fastest=all.filter(a=>a.correct && a.elapsed!=null).sort((a,b)=>a.elapsed-b.elapsed)[0];
-  if(fastest) awards.push({ icon:'⚡', title:'最速早押し', name:nameOf(fastest), val:`${fastest.elapsed.toFixed(2)} 秒で正解` });
+  if(fastest) awards.push({ icon:'⚡', title:'最速早押し', name:nameOf(fastest), val:`${safeNum(fastest.elapsed).toFixed(2)} 秒で正解` });
   const count=(filter)=>{ const m={}; all.filter(filter).forEach(a=>m[a.uuid]=(m[a.uuid]||0)+1); return Object.entries(m).sort((a,b)=>b[1]-a[1])[0]; };
   const best=count(a=>a.correct);
   if(best) awards.push({ icon:'🎯', title:'正解王', name:names[best[0]]||'?', val:`${best[1]} 問正解` });
@@ -3747,7 +3750,7 @@ function renderStandings(elId, room, final, prevScores){
   document.getElementById(elId).innerHTML=sorted.map((p,i)=>{
     let extra='';
     if(prevScores){
-      const d=(scores[p.uuid]||0)-(prevScores[p.uuid]||0), mv=(prevRank[p.uuid]??i)-i;
+      const d=safeNum(scores[p.uuid])-safeNum(prevScores[p.uuid]), mv=(prevRank[p.uuid]??i)-i;
       if(d) extra+=`<span class="delta ${d>0?'up':'down'}">${d>0?'+':''}${d}</span>`;
       if(mv) extra+=`<span class="rank-move ${mv>0?'up':'down'}">${mv>0?'▲':'▼'}${Math.abs(mv)}</span>`;
     }
@@ -3756,7 +3759,7 @@ function renderStandings(elId, room, final, prevScores){
       <div class="stand-rank">${i+1}</div>
       <span class="chip-avatar" style="width:30px;height:30px;background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</span>
       <div class="stand-name">${escHtml(p.name||'?')}${final&&i===0?' 👑':''}</div>
-      ${extra}<div class="stand-score">${scores[p.uuid]||0}</div>
+      ${extra}<div class="stand-score">${safeNum(scores[p.uuid])}</div>
     </div>`; }).join('');
 }
 
@@ -3813,7 +3816,7 @@ function renderSetup(){
   const grid=document.getElementById('setup-list-grid');
   const lists=visibleLists().filter(l=>(l.songs||[]).length>0);
   if(lists.length===0){ grid.innerHTML='<div class="empty-list" style="grid-column:1/-1;">プレイ可能なリストがありません。曲リストを作成してください。</div>'; return; }
-  grid.innerHTML=lists.map(l=>listCardHtml(l,{ onclick:`selectSetupList('${l.id}')`, noPlay:true })).join('');
+  grid.innerHTML=lists.map(l=>listCardHtml(l,{ onclick:`selectSetupList('${safeId(l.id)}')`, noPlay:true })).join('');
 }
 function selectSetupList(id){
   setupSelectedListId=id;
@@ -4083,6 +4086,7 @@ function nextQuestion(){ if(quiz.current>=quiz.songs.length-1) showResult(); els
 // 「Q3 / 全10問」の出題演出（見た目だけで、再生や操作は止めない）
 function showQIntro(id, n, total){
   const el=document.getElementById(id); if(!el) return;
+  n=safeNum(n,1); total=safeNum(total,1);
   el.innerHTML=`<div class="q-intro-num">Q${n}</div><div class="q-intro-sub">${n===total&&total>1?'ラスト！':`全${total}問`}</div>`;
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
   // アニメーションが止まる環境（裏のタブなど）でも残らないよう、時間で確実に消す
@@ -4137,7 +4141,7 @@ function showResult(partial){
     const best=recordSoloBest(avg);
     if(best && best.better && best.prev) document.getElementById('result-msg').textContent='🎊 自己ベスト更新！ '+msg;
   }
-  document.getElementById('result-list').innerHTML=quiz.results.map(r=>`<div class="result-item"><span style="font-size:18px;">${r.correct?'✅':'❌'}</span>${r.videoId?`<img class="result-thumb" src="https://img.youtube.com/vi/${r.videoId}/mqdefault.jpg" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:''}<div style="flex:1; min-width:0;"><div style="font-weight:800;">${escHtml(r.answer||r.title)}</div><div style="color:var(--color-muted); font-size:12px; margin-top:2px;">あなたの答え：${escHtml(r.userInput)}</div></div>${r.correct&&r.time!=null?`<span class="sub-time">${r.time.toFixed(2)}秒</span>`:''}</div>`).join('');
+  document.getElementById('result-list').innerHTML=quiz.results.map(r=>`<div class="result-item"><span style="font-size:18px;">${r.correct?'✅':'❌'}</span>${r.videoId?`<img class="result-thumb" src="https://img.youtube.com/vi/${safeId(r.videoId)}/mqdefault.jpg" alt="" loading="lazy" onerror="this.style.visibility='hidden'">`:''}<div style="flex:1; min-width:0;"><div style="font-weight:800;">${escHtml(r.answer||r.title)}</div><div style="color:var(--color-muted); font-size:12px; margin-top:2px;">あなたの答え：${escHtml(r.userInput)}</div></div>${r.correct&&r.time!=null?`<span class="sub-time">${r.time.toFixed(2)}秒</span>`:''}</div>`).join('');
   showPage('result');
   // 円グラフを0から伸ばす
   const ring=document.getElementById('result-ring'); let p=0; const target=pct*100;
@@ -4152,7 +4156,7 @@ function showResult(partial){
 function renderStats(){
   const me=getUser().uuid;
   const my=STATE.users.find(u=>u.uuid===me);
-  const ms=(my&&my.stats)?my.stats:{games:0,totalScore:0,wins:0};
+  const ms0=(my&&my.stats)||{}; const ms={ games:safeNum(ms0.games), totalScore:safeNum(ms0.totalScore), wins:safeNum(ms0.wins) };
   const avg = ms.games? (ms.totalScore/ms.games) : 0;
   const rate = ms.games? (ms.wins/ms.games*100) : 0;
 
@@ -4173,12 +4177,12 @@ function renderStats(){
   document.getElementById('solo-bests-card').innerHTML=`<div class="card-title">ソロの自己ベスト（この端末）</div>`+(bests.length
     ? bests.map(b=>`<div class="best-row"><span class="best-name">${escHtml(getList(b.id).name)}</span><span class="best-rate">${Math.round(b.rate*100)}%</span><span class="best-sub">${b.score}/${b.total}問${b.avg!=null?` ・ 平均${b.avg.toFixed(1)}秒`:''}</span></div>`).join('')
     : '<div style="color:var(--color-muted); font-size:14px;">まだ記録がありません。「ひとりで練習」を最後まで遊ぶと記録されます。</div>');
-  const ranked=STATE.users.filter(u=>u.stats && u.stats.games>0)
-    .sort((a,b)=> (b.stats.wins-a.stats.wins) || (b.stats.totalScore-a.stats.totalScore));
+  const ranked=STATE.users.filter(u=>u.stats && safeNum(u.stats.games)>0)
+    .sort((a,b)=> (safeNum(b.stats.wins)-safeNum(a.stats.wins)) || (safeNum(b.stats.totalScore)-safeNum(a.stats.totalScore)));
   const el=document.getElementById('stats-ranking');
   if(ranked.length===0){ el.innerHTML='<div class="empty-list">まだ誰の記録もありません。</div>'; return; }
   el.innerHTML=ranked.map((u,i)=>{
-    const s=u.stats; const r=s.games?(s.wins/s.games*100):0;
+    const s={ games:safeNum(u.stats.games), wins:safeNum(u.stats.wins), totalScore:safeNum(u.stats.totalScore) }; const r=s.games?(s.wins/s.games*100):0;
     return `<div class="rank-row ${u.uuid===me?'me':''}">
       <div class="rank-num">${i+1}</div>
       <span class="chip-avatar" style="width:30px;height:30px;background:${avatarColor(u.uuid)}">${escHtml((u.name||'?').slice(0,1).toUpperCase())}</span>
