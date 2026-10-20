@@ -462,6 +462,9 @@
   .delta.up { color:#062b1d; background:var(--color-correct); } .delta.down { color:#fff; background:var(--color-wrong); }
   .rank-move.up { color:var(--color-correct); } .rank-move.down { color:var(--color-wrong); }
   .song-search { max-width:220px; border-radius:999px; padding:8px 14px; }
+  .songs-head { flex-wrap:wrap; justify-content:flex-start; }
+  .songs-head h2 { white-space:nowrap; margin-right:auto; }
+  @media (max-width:560px){ .songs-head .song-search { order:5; flex:1 1 100%; max-width:none; } }
   .song-row.is-broken { border-color:rgba(255,93,108,0.5); background:rgba(255,93,108,0.06); }
   .broken-tag { color:var(--color-wrong); font-weight:800; }
   .fallback-play { display:block; margin:10px auto 0; }
@@ -1213,7 +1216,9 @@
         <div class="section-desc" id="detail-list-meta"></div>
       </div>
       <div class="head-actions">
-        <button class="btn-primary" id="detail-play" onclick="quickPlaySolo(currentListId)">▶ このリストで遊ぶ</button>
+        <button class="btn-primary" id="detail-play" onclick="quickPlaySolo(currentListId)">▶ ひとりで遊ぶ</button>
+        <button class="btn-sub" id="detail-room" onclick="openRoomModal(currentListId)" style="padding:10px 16px; font-size:13px;" title="この曲リストを選んだ状態で対戦部屋を作ります">🎤 この曲で部屋を建てる</button>
+        <button class="btn-sub" id="detail-share" onclick="shareListLink()" style="padding:10px 16px; font-size:13px;" title="このリストを開くリンクを送ります">🔗 共有</button>
         <button class="btn-sub" id="detail-copy-list" onclick="duplicateList()" style="padding:10px 16px; font-size:13px;" title="このリストを自分用（個人用）にコピーして、曲を追加・削除できるようにします">📄 複製</button>
         <button class="btn-sub" id="detail-delete-list" onclick="confirmDeleteList()" style="padding:10px 16px; font-size:13px;">削除</button>
       </div>
@@ -1286,7 +1291,7 @@
       </div>
     </div>
 
-    <div class="section-head" style="margin-top:8px;">
+    <div class="section-head songs-head" style="margin-top:8px;">
       <h2>🎵 曲 <span id="detail-song-count" style="color:var(--color-muted); font-size:14px;">0 曲</span></h2>
       <input class="form-input song-search" id="song-search" type="search" placeholder="🔍 曲を検索" oninput="renderDetailSongs()" style="display:none;">
       <button class="btn-sub" id="detail-health" onclick="checkListHealth()" style="padding:8px 14px; font-size:13px;" title="削除・非公開・埋め込み禁止・日本で視聴不可の曲がないか調べます">🩺 再生チェック</button>
@@ -1740,6 +1745,7 @@ function openListDetail(id){
   document.getElementById('detail-list-meta').textContent=`${list.visibility==='public'?'🌐 公開':'🔒 個人用'} ・ by ${list.ownerName||'?'}`;
   document.getElementById('add-song-panel').style.display=editable?'':'none';
   document.getElementById('detail-delete-list').style.display=editable?'':'none';
+  document.getElementById('detail-share').style.display=list.visibility==='public'?'':'none';   // 個人用リストはほかの人から見えない
   document.getElementById('detail-autoname').style.display=editable?'':'none';
   // 曲がまだないリストは「追加」を目立たせる（プレイリストのタブから）
   setAddTab((list.songs||[]).length?addTabLast:'playlist');
@@ -2463,7 +2469,9 @@ function renderRoomsList(){
   }).join('');
 }
 
-function openRoomModal(){
+let roomModalListId=null;   // 曲リストの画面から部屋を建てるときに選んでおくリスト
+function openRoomModal(listId){
+  roomModalListId=(typeof listId==='string' && getList(listId))?listId:null;
   if(!getUser().name){ showToast('先に表示名を設定してください','error'); openProfileModal(); return; }
   document.getElementById('new-room-name').value='';
   document.getElementById('new-room-name').placeholder=`${getUser().name}の部屋`;
@@ -2486,12 +2494,15 @@ function createRoom(){
   const bySize=(a,b)=>(b.songs||[]).length-(a.songs||[]).length;
   const playable=visibleLists().filter(l=>(l.songs||[]).length);
   const def=playable.filter(l=>l.ownerUuid===u.uuid).sort(bySize)[0] || playable.sort(bySize)[0];
+  const chosen=roomModalListId && getList(roomModalListId); roomModalListId=null;
+  const settings=initialRoomSettings(chosen||def);
+  if(chosen){ settings.listIds=[chosen.id]; settings.listId=chosen.id; settings.genre=''; settings.yaminabe=false; }
   const room={
     name, code, passphrase: visibility==='private'?passphrase:'',
     visibility, status:'lobby',
     hostUuid:u.uuid, hostName:u.name,
     players:{ [u.uuid]:{ uuid:u.uuid, name:u.name, joinedAt:Date.now() } },
-    settings:initialRoomSettings(def),
+    settings,
     createdAt:Date.now()
   };
   db.ref('rooms/'+id).set(room).then(()=>{ closeModal('room-modal'); enterLobby(id); showToast('部屋を作成しました','success'); });
@@ -2528,6 +2539,15 @@ function joinRoom(id){
     .then(()=>{ document.getElementById('join-code').value=''; enterLobby(id); });
 }
 // 招待リンク（?room=コード）。非公開部屋は合言葉を使う
+// 曲リストのリンク（?list=ID）。開くとこのリストの画面が出る
+function shareListLink(){
+  const list=getList(currentListId); if(!list || list.visibility!=='public') return;
+  const url=location.origin+location.pathname+'?list='+encodeURIComponent(list.id);
+  const text=`🎵 INTRO QUIZ の曲リスト「${list.name}」（${(list.songs||[]).length}曲）でイントロクイズしよう！`;
+  if(navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)){ navigator.share({ title:'イントロクイズ', text, url }).catch(()=>{}); return; }
+  if(navigator.clipboard) navigator.clipboard.writeText(text+'\n'+url).then(()=>showToast('リンクをコピーしました','success'),()=>prompt('このリンクを共有してください', url));
+  else prompt('このリンクを共有してください', url);
+}
 function copyInviteLink(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
   const key=(room.visibility==='private' && room.passphrase) ? room.passphrase : room.code;
@@ -2545,6 +2565,13 @@ function handleStartupJoin(){
   const u=getUser();
   const params=new URLSearchParams(location.search);
   if(params.has('daily')){ history.replaceState(null,'',location.pathname); startDaily(); return; }
+  const listParam=params.get('list');
+  if(listParam){
+    history.replaceState(null,'',location.pathname);
+    const l=getList(listParam);
+    if(l && (l.visibility==='public' || l.ownerUuid===u.uuid)) openListDetail(l.id); else showToast('曲リストが見つかりません（削除されたか、個人用の可能性）','error');
+    return;
+  }
   const code=params.get('room');
   if(code){
     history.replaceState(null,'',location.pathname);
