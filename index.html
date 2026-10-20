@@ -470,6 +470,17 @@
   .delta, .rank-move { font-size:12px; font-weight:800; padding:2px 8px; border-radius:999px; animation:popIn .4s cubic-bezier(.2,1.5,.4,1) both; }
   .delta.up { color:#062b1d; background:var(--color-correct); } .delta.down { color:#fff; background:var(--color-wrong); }
   .rank-move.up { color:var(--color-correct); } .rank-move.down { color:var(--color-wrong); }
+  .yt-search-row { display:flex; gap:8px; }
+  .yt-search-row .form-input { flex:1; min-width:0; }
+  .yt-search-row .btn-primary { padding:10px 20px; font-size:14px; white-space:nowrap; }
+  .yt-results { display:grid; gap:8px; }
+  .yt-row { display:flex; align-items:center; gap:12px; padding:8px; border-radius:var(--radius); background:rgba(255,255,255,0.03); border:1px solid var(--color-border); }
+  .yt-thumb { width:96px; aspect-ratio:16/9; object-fit:cover; border-radius:8px; flex-shrink:0; background:#000; }
+  .yt-info { flex:1; min-width:0; }
+  .yt-song { font-weight:800; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .yt-title, .yt-ch { font-size:12px; color:var(--color-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .yt-add { padding:8px 14px; font-size:13px; white-space:nowrap; flex-shrink:0; }
+  @media (max-width:560px){ .yt-thumb { width:72px; } .yt-add { padding:8px 10px; } }
   .song-search { max-width:220px; border-radius:999px; padding:8px 14px; }
   .songs-head { flex-wrap:wrap; justify-content:flex-start; }
   .songs-head h2 { white-space:nowrap; margin-right:auto; }
@@ -1246,9 +1257,29 @@
     <div class="card" id="add-song-panel">
       <div class="card-title">＋ 曲を追加</div>
       <div class="seg-tabs" role="tablist">
+        <button class="seg-tab" role="tab" data-tab="search" onclick="setAddTab('search')">🔍 曲名で検索</button>
         <button class="seg-tab active" role="tab" data-tab="playlist" onclick="setAddTab('playlist')">📋 プレイリスト</button>
         <button class="seg-tab" role="tab" data-tab="bulk" onclick="setAddTab('bulk')">⚡ URLをまとめて</button>
         <button class="seg-tab" role="tab" data-tab="single" onclick="setAddTab('single')">✏️ 1曲ずつ</button>
+      </div>
+      <div class="seg-panel" id="search-card" data-panel="search" hidden>
+        <div class="form-group">
+          <label class="form-label">曲名・アーティスト名で YouTube を検索</label>
+          <div class="yt-search-row">
+            <input class="form-input" id="yt-q" type="search" placeholder="例: 夜に駆ける YOASOBI" enterkeyhint="search" onkeydown="if(event.key==='Enter') searchYouTube()">
+            <button class="btn-primary" id="yt-search-btn" onclick="searchYouTube()">検索</button>
+          </div>
+          <div class="form-hint">「＋ 追加」を押すと、曲名とよみがなを自動で入れてこのリストに追加します。埋め込み再生できて日本で見られる動画だけを表示します。</div>
+        </div>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label">ジャンル（追加する曲に適用）</label>
+          <select class="form-select" id="yt-genre">
+            <option value="">未分類</option><option value="J-POP">J-POP</option><option value="アニメ">アニメ</option>
+            <option value="ゲーム">ゲーム</option><option value="洋楽">洋楽</option><option value="K-POP">K-POP</option>
+            <option value="ボカロ">ボカロ</option><option value="その他">その他</option>
+          </select>
+        </div>
+        <div class="yt-results" id="yt-results"></div>
       </div>
       <div class="seg-panel" id="playlist-card" data-panel="playlist">
         <div class="form-group">
@@ -1804,7 +1835,7 @@ async function checkListHealth(){
   } else showToast(`${broken.length}曲は再生できない可能性があります（⚠ の付いた曲）`,'error');
 }
 // 曲の追加方法のタブ（プレイリスト／URLをまとめて／1曲ずつ）
-let addTabLast='playlist';
+let addTabLast='search';
 function setAddTab(tab){
   addTabLast=tab;
   document.querySelectorAll('#add-song-panel .seg-tab').forEach(b=>{ const on=b.dataset.tab===tab; b.classList.toggle('active',on); b.setAttribute('aria-selected',on); });
@@ -1851,6 +1882,54 @@ function songFromVideo(vid, title, channel, genre, u){
     url:`https://www.youtube.com/watch?v=${vid}`, videoId:vid,
     answers:[g.song||title, ...g.alts], yomigana:[], title, genre:genre||'', createdAt:Date.now()
   };
+}
+// ===== 曲名で検索して追加（YouTube Data API の search。1回100ユニット使うので、入力のたびではなく検索ボタン・Enterで実行） =====
+let ytResults=[];
+function decodeEntities(s){ const t=document.createElement('textarea'); t.innerHTML=String(s||''); return t.value; }
+async function searchYouTube(){
+  const q=document.getElementById('yt-q').value.trim();
+  if(!q){ showToast('曲名を入力してください','error'); return; }
+  const btn=document.getElementById('yt-search-btn'); if(btn.disabled) return;
+  btn.disabled=true; btn.textContent='検索中...';
+  try{
+    const url=`https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&videoEmbeddable=true&regionCode=JP&relevanceLanguage=ja&maxResults=10&q=${encodeURIComponent(q)}&key=${YT_API_KEY}`;
+    const data=await (await fetch(url)).json();
+    if(data.error) throw new Error(data.error.message||'APIエラー');
+    ytResults=(data.items||[]).map(it=>({ vid:safeId(it.id&&it.id.videoId), title:decodeEntities(it.snippet&&it.snippet.title), channel:decodeEntities(it.snippet&&it.snippet.channelTitle) })).filter(r=>r.vid);
+    renderYtResults();
+    if(!ytResults.length) showToast('見つかりませんでした。別の言葉で検索してみてください','error');
+  }catch(e){ showToast('検索できませんでした（'+(e.message||e)+'）','error'); }
+  finally{ btn.disabled=false; btn.textContent='検索'; }
+}
+function renderYtResults(){
+  const el=document.getElementById('yt-results'); const list=getList(currentListId);
+  const have=new Set(((list&&list.songs)||[]).map(s=>s.videoId));
+  el.innerHTML=ytResults.map((r,i)=>{
+    const g=guessSongName(r.title, r.channel);
+    const added=have.has(r.vid);
+    return `<div class="yt-row">
+      <img class="yt-thumb" src="https://img.youtube.com/vi/${r.vid}/mqdefault.jpg" alt="" loading="lazy">
+      <div class="yt-info"><div class="yt-song">${escHtml(g.song||r.title)}</div><div class="yt-title">${escHtml(r.title)}</div><div class="yt-ch">${escHtml(r.channel)}</div></div>
+      <button class="${added?'btn-sub':'btn-primary'} yt-add" type="button" ${added?'disabled':''} onclick="addFromSearch(${i})">${added?'追加済み':'＋ 追加'}</button>
+    </div>`;
+  }).join('');
+}
+async function addFromSearch(i){
+  const r=ytResults[i]; const list=getList(currentListId); if(!r || !list) return;
+  list.songs=list.songs||[];
+  if(list.songs.some(s=>s.videoId===r.vid)){ showToast('この曲はすでに登録されています','error'); renderYtResults(); return; }
+  const btn=document.querySelectorAll('#yt-results .yt-add')[i]; if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent='確認中...'; }
+  // 念のため再生できるか確かめる（日本で視聴不可などは検索結果に混ざることがある）
+  let m=null; try{ m=(await fetchVideoEntries([r.vid]))[0]||null; }catch(e){}
+  if(m && m.problem){ showToast(`この動画は追加できません（${PROBLEM_LABEL[m.problem]}）`,'error'); renderYtResults(); return; }
+  const song=songFromVideo(r.vid, (m&&m.title)||r.title, (m&&m.channel)||r.channel, document.getElementById('yt-genre').value, getUser());
+  const cur=getList(currentListId); if(!cur) return; cur.songs=cur.songs||[];
+  if(cur.songs.some(s=>s.videoId===r.vid)){ renderYtResults(); return; }
+  cur.songs.push(song);
+  await saveListToCloud(cur);
+  showToast(`「${song.answers[0]}」を追加しました`,'success');
+  renderYtResults();
+  fillYomiganaLater(cur.id, [song.id]);
 }
 async function bulkAddSongs(){
   const list=getList(currentListId); if(!list) return;
