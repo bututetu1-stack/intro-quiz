@@ -376,6 +376,7 @@
   .reveal-thumb { width:min(100%,320px); aspect-ratio:16/9; object-fit:cover; border-radius:var(--radius); display:block; margin:10px auto 12px; box-shadow:var(--shadow); background:#000; }
   .reveal-answer { font-size:28px; font-weight:800; color:var(--color-text); margin:4px 0 6px; line-height:1.3; }
   .reveal-winner { font-size:15px; font-weight:800; color:var(--color-accent); }
+  .auto-next { text-align:center; font-size:14px; font-weight:800; color:var(--color-accent2); margin:-4px 0 12px; }
   .sub-list, .stand-list, .result-list { background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg); overflow:hidden; margin-bottom:18px; }
   .sub-row { display:flex; align-items:center; gap:10px; padding:11px 16px; border-bottom:1px solid var(--color-border); font-size:14px; }
   .sub-row:last-child { border-bottom:none; }
@@ -782,6 +783,14 @@
           <div class="form-hint">入力中に曲名の候補を表示（スマホで入力がラクに）</div>
         </div>
       </div>
+      <div class="form-group">
+        <label class="form-label">結果発表のあと自動で次の問題へ</label>
+        <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="toggleAutoNext()">
+          <div class="toggle-track" id="autonext-track"><div class="toggle-knob"></div></div>
+          <span style="font-size:13px;" id="autonext-label">OFF</span>
+        </div>
+        <div class="form-hint">ONにすると、結果発表から7秒後（サビ再生ONなら15秒後）に自動で進みます。ホストも一緒に遊ぶときに便利です。</div>
+      </div>
 
       <details class="settings-adv">
       <summary>詳細設定（ハンデ戦・サビ再生・得点）</summary>
@@ -908,6 +917,7 @@
       <div class="sub-list" id="reveal-subs"></div>
       <div class="section-head" style="margin-bottom:8px;"><h2 style="font-size:15px;">現在のスコア</h2></div>
       <div class="stand-list" id="reveal-standings"></div>
+      <div class="auto-next" id="reveal-auto" style="display:none;"></div>
       <div id="reveal-host-actions" style="display:none;">
         <button class="btn-primary" style="width:100%;" id="reveal-next-btn" onclick="hostNext()">次の問題 →</button>
       </div>
@@ -1250,7 +1260,7 @@
   <div class="modal">
     <div class="modal-title">部屋を建てる</div>
     <div class="modal-text">あなたがホストになります。公開部屋は一覧に表示、非公開部屋は合言葉でのみ参加できます。</div>
-    <div class="form-group"><label class="form-label">部屋名</label><input class="form-input" id="new-room-name" type="text" maxlength="30" placeholder="例: 金曜夜のイントロ大会"></div>
+    <div class="form-group"><label class="form-label">部屋名（空欄なら自動）</label><input class="form-input" id="new-room-name" type="text" maxlength="30" placeholder="例: 金曜夜のイントロ大会" onkeydown="if(event.key==='Enter') createRoom()"></div>
     <div class="form-group"><label class="form-label">公開設定</label>
       <select class="form-select" id="new-room-visibility" onchange="onRoomVisChange()">
         <option value="public">🌐 公開部屋</option><option value="private">🔒 非公開部屋（合言葉）</option>
@@ -1536,7 +1546,7 @@ function openListDetail(id){
   // 曲がまだないリストは「追加」を目立たせる（プレイリストのタブから）
   setAddTab((list.songs||[]).length?addTabLast:'playlist');
   document.getElementById('song-search').value='';
-  resetSongForm(); renderDetailSongs(); showPage('list-detail');
+  resetSongForm(); renderDetailSongs(); showPage('list-detail'); window.scrollTo(0,0);
 }
 // リストを自分用（個人用）に複製する。人のリストを元に曲を足したり減らしたりできる
 function duplicateList(){
@@ -2176,6 +2186,7 @@ function renderRoomsList(){
 function openRoomModal(){
   if(!getUser().name){ showToast('先に表示名を設定してください','error'); openProfileModal(); return; }
   document.getElementById('new-room-name').value='';
+  document.getElementById('new-room-name').placeholder=`${getUser().name}の部屋`;
   document.getElementById('new-room-visibility').value='public';
   document.getElementById('new-room-pass').value='';
   onRoomVisChange();
@@ -2186,17 +2197,21 @@ function onRoomVisChange(){
   document.getElementById('room-pass-group').style.display = v==='private'?'':'none';
 }
 function createRoom(){
-  const name=document.getElementById('new-room-name').value.trim();
+  const u=getUser();
+  const name=document.getElementById('new-room-name').value.trim() || `${u.name}の部屋`;
   const visibility=document.getElementById('new-room-visibility').value;
   const passphrase=document.getElementById('new-room-pass').value.trim();
-  if(!name){ showToast('部屋名を入力してください','error'); return; }
-  const u=getUser(); const id=genUuid(); const code=genCode();
+  const id=genUuid(); const code=genCode();
+  // 最初から曲リストを1つ選んでおく（自分のリストのうち曲が多いもの、なければ公開リストで曲が多いもの）
+  const bySize=(a,b)=>(b.songs||[]).length-(a.songs||[]).length;
+  const playable=visibleLists().filter(l=>(l.songs||[]).length);
+  const def=playable.filter(l=>l.ownerUuid===u.uuid).sort(bySize)[0] || playable.sort(bySize)[0];
   const room={
     name, code, passphrase: visibility==='private'?passphrase:'',
     visibility, status:'lobby',
     hostUuid:u.uuid, hostName:u.name,
     players:{ [u.uuid]:{ uuid:u.uuid, name:u.name, joinedAt:Date.now() } },
-    settings:{ listId:'', genre:'', count:10, handicap:false, hcOwnerMiss:-1, hcOtherHit:2 },
+    settings:{ listIds:def?[def.id]:[], listId:def?def.id:'', genre:'', count:10, handicap:false, hcOwnerMiss:-1, hcOtherHit:2, songLimit:30, suggestOn:true, autoNext:true },
     createdAt:Date.now()
   };
   db.ref('rooms/'+id).set(room).then(()=>{ closeModal('room-modal'); enterLobby(id); showToast('部屋を作成しました','success'); });
@@ -2352,6 +2367,7 @@ function populateHostSettings(s){
   document.getElementById('set-wrong-pts').value = s.wrongPts ?? 0;
   document.getElementById('set-song-limit').value = String(s.songLimit ?? 30);
   setSuggest(s.suggestOn ?? true);
+  setAutoNext(!!s.autoNext);
   populateYaminabeGenre(s.yaminabeGenre||'');
 }
 let suggestOn=true;
@@ -2361,6 +2377,13 @@ function setSuggest(on){
   document.getElementById('suggest-label').textContent=on?'ON':'OFF';
 }
 function toggleSuggest(){ setSuggest(!suggestOn); }
+let autoNextOn=false;
+function setAutoNext(on){
+  autoNextOn=on;
+  document.getElementById('autonext-track').classList.toggle('on',on); refreshToggleAria();
+  document.getElementById('autonext-label').textContent=on?'ON':'OFF';
+}
+function toggleAutoNext(){ setAutoNext(!autoNextOn); }
 // 回答候補（出題プール全体の曲名と、そのよみがな。重複除去・シャッフル）
 function buildChoiceSet(pool){
   const seen=new Set(); const items=[];
@@ -2428,6 +2451,7 @@ function saveRoomSettings(){
     correctPts:parseInt(document.getElementById('set-correct-pts').value,10)||1,
     wrongPts:parseInt(document.getElementById('set-wrong-pts').value,10)||0,
     songLimit:parseInt(document.getElementById('set-song-limit').value,10)||30,
+    autoNext:autoNextOn,
     suggestOn
   };
   return db.ref(`rooms/${id}/settings`).set(settings).then(()=>showToast('設定を保存しました','success'));
@@ -2727,6 +2751,7 @@ function setAudioCover(playing, text){
 }
 
 function cleanupMatch(){
+  if(autoNextInt){ clearInterval(autoNextInt); autoNextInt=null; }
   if(matchStopTimer){ clearTimeout(matchStopTimer); matchStopTimer=null; }
   if(matchTimerInt){ clearInterval(matchTimerInt); matchTimerInt=null; }
   if(answerBarInt){ clearInterval(answerBarInt); answerBarInt=null; }
@@ -2863,6 +2888,7 @@ function renderMatch(id, room){
   document.getElementById('match-finished-view').style.display='none';
 
   if(g.phase==='reveal'){ renderReveal(id, room); return; }
+  if(autoNextInt){ clearInterval(autoNextInt); autoNextInt=null; }
   if(g.phase!=='play') return;
 
   // 新しい問題に切り替わったら準備（自動再生）
@@ -3117,6 +3143,7 @@ function hostReveal(id, room, winnerUuid, extraUpdates){
   const g=room.game; if(!g||g.phase!=='play') return;
   const idx=g.current;
   const { scores, roundResult }=computeRoundResult(room, idx, winnerUuid||null);
+  roundResult.revealedAt=serverNow();   // 自動で次へ進むまでの残り時間を全員で揃えるため
   const updates={ ...(extraUpdates||{}) };
   updates[`rooms/${id}/game/scores`]=scores;
   updates[`rooms/${id}/game/roundResult/${idx}`]=roundResult;
@@ -3221,7 +3248,26 @@ function renderReveal(id, room){
   document.getElementById('reveal-host-actions').style.display=isHost?'':'none';
   document.getElementById('reveal-guest-wait').style.display=isHost?'none':'';
   document.getElementById('reveal-next-btn').textContent=(g.current>=g.total-1)?'最終結果へ →':'次の問題 →';
+  // 自動で次の問題へ（ホストの設定）。残り時間は全員に表示し、進めるのはホストだけ
+  if(autoNextInt){ clearInterval(autoNextInt); autoNextInt=null; }
+  const autoEl=document.getElementById('reveal-auto');
+  if(settings.autoNext && rr.revealedAt){
+    const due=rr.revealedAt+(settings.chorusOn?15:7)*1000, key=id+':'+idx, last=g.current>=g.total-1;
+    const upd=()=>{
+      const left=Math.ceil((due-serverNow())/1000);
+      autoEl.style.display=''; autoEl.textContent=left>0?`${last?'最終結果':'次の問題'}まで ${left} 秒`:'まもなく…';
+      if(left>0) return;
+      clearInterval(autoNextInt); autoNextInt=null;
+      if(isHost && autoNextDoneKey!==key){
+        autoNextDoneKey=key;
+        const r=STATE.rooms.find(x=>x.id===id);
+        if(r && r.game && r.game.phase==='reveal' && r.game.current===idx) hostNext();
+      }
+    };
+    upd(); if(autoNextInt===null || !autoNextInt) autoNextInt=setInterval(upd,250);
+  } else autoEl.style.display='none';
 }
+let autoNextInt=null, autoNextDoneKey=null;
 
 function hostNext(){
   const room=STATE.rooms.find(r=>r.id===STATE.currentRoomId); if(!room) return;
