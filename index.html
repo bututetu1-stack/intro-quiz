@@ -274,6 +274,7 @@
   .room-name { font-weight:800; font-size:16px; }
   .tile-kick { position:absolute; top:4px; right:4px; width:24px; height:24px; border-radius:50%; border:1px solid var(--color-border); background:rgba(0,0,0,0.25); color:var(--color-muted); font-size:11px; cursor:pointer; line-height:1; opacity:.7; }
   .tile-kick:hover { opacity:1; color:var(--color-wrong); border-color:var(--color-wrong); }
+  .tile-role { display:block; font-size:10px; font-weight:800; color:var(--color-accent2); }
   .team-pick { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:14px; padding-top:12px; border-top:1px solid var(--color-border); }
   .team-pick[hidden] { display:none; }
   .team-pick-label { font-size:13px; font-weight:800; color:var(--color-muted); }
@@ -963,6 +964,14 @@
           <span style="font-size:13px;" id="choice-label">OFF</span>
         </div>
         <div class="form-hint">早押しのあと、4つの曲名から答えを選びます。スマホでも遊びやすく、初めての人がいるときにおすすめ。</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">司会モード（ホストは回答しない）</label>
+        <div class="toggle-switch" role="switch" tabindex="0" aria-checked="false" onclick="togglePresenterMode()">
+          <div class="toggle-track" id="presenter-track"><div class="toggle-knob"></div></div>
+          <span style="font-size:13px;" id="presenter-label">OFF</span>
+        </div>
+        <div class="form-hint">ホストの端末は曲を流して進行するだけになり、早押し・得点・順位から外れます。テレビや PC で曲を流し、みんなはスマホで「ホストの端末の音で聴く」をオンにして早押しする遊び方向け。</div>
       </div>
       <div class="form-group">
         <label class="form-label">チーム戦（🔴 赤・🔵 青）</label>
@@ -2812,7 +2821,8 @@ function settingsSummaryHtml(s){
     choice,
     s.chorusOn?'<span class="pill">サビ再生</span>':'',
     s.handicap?'<span class="pill">ハンデ戦</span>':'',
-    s.teamMode?'<span class="pill">👥 チーム戦</span>':''
+    s.teamMode?'<span class="pill">👥 チーム戦</span>':'',
+    s.presenterMode?'<span class="pill">🎙 司会あり</span>':''
   ].join('');
 }
 const lobbySeenPlayers={};   // 部屋ごとに表示済みの参加者（新しく入った人だけアニメーションする）
@@ -2842,16 +2852,17 @@ function renderLobby(id, room){
     const crown=p.uuid===room.hostUuid?'<span class="tile-crown" title="ホスト">👑</span>':'';
     const ear=(p.listen && p.uuid!==room.hostUuid)?'<span class="tile-listen" title="ホストの端末の音で聴く">🔈</span>':'';
     const kick=(isHost && p.uuid!==u.uuid)?`<button class="tile-kick" type="button" title="部屋から外す" aria-label="${escAttr(p.name||'?')} さんを部屋から外す" onclick="kickPlayer('${safeId(p.uuid)}')">✕</button>`:'';
-    const tcls=(isTeamRoom(room) && TEAMS[p.team])?' team-'+p.team:'';
-    return `<div class="player-tile${isNew?' new':''}${p.uuid===u.uuid?' me':''}${tcls}">${crown}${ear}${kick}<div class="tile-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</div><div class="tile-name">${escHtml(p.name||'?')}${p.uuid===u.uuid?'（あなた）':''}</div></div>`;
+    const tcls=(isTeamRoom(room) && TEAMS[p.team] && !isPresenter(room,p.uuid))?' team-'+p.team:'';
+    const mic=isPresenter(room,p.uuid)?'<span class="tile-role">🎙 司会</span>':'';
+    return `<div class="player-tile${isNew?' new':''}${p.uuid===u.uuid?' me':''}${tcls}">${crown}${ear}${kick}<div class="tile-avatar" style="background:${avatarColor(p.uuid)}">${escHtml((p.name||'?').slice(0,1).toUpperCase())}</div><div class="tile-name">${escHtml(p.name||'?')}${mic}${p.uuid===u.uuid?'（あなた）':''}</div></div>`;
   }).join('');
   const lp=document.getElementById('lobby-players');
-  const key=players.map(p=>p.uuid+':'+p.name+':'+(p.listen?1:0)+':'+(p.team||'')).join(',')+'|'+room.hostUuid+'|'+(isHost?1:0)+'|'+(isTeamRoom(room)?1:0);
+  const key=players.map(p=>p.uuid+':'+p.name+':'+(p.listen?1:0)+':'+(p.team||'')).join(',')+'|'+room.hostUuid+'|'+(isHost?1:0)+'|'+(isTeamRoom(room)?1:0)+'|'+(presenterOf(room)||'');
   if(lp.dataset.key!==key){ lp.innerHTML=tilesHtml; lp.dataset.key=key; players.forEach(p=>seen.add(p.uuid)); }
 
   document.getElementById('lobby-host-settings').style.display=isHost?'':'none';
   document.getElementById('listen-opt').hidden=isHost; if(!isHost) syncListenUI();
-  const tp=document.getElementById('team-pick'); tp.hidden=!isTeamRoom(room);
+  const tp=document.getElementById('team-pick'); tp.hidden=!isTeamRoom(room) || isPresenter(room, u.uuid);
   if(isTeamRoom(room)){
     const mine=((room.players||{})[u.uuid]||{}).team, c=teamCounts(room);
     tp.querySelectorAll('.team-btn').forEach(b=>b.classList.toggle('active', b.dataset.team===mine));
@@ -2893,6 +2904,7 @@ function populateHostSettings(s){
   setAutoNext(!!s.autoNext);
   setChoiceMode(!!s.choiceMode);
   setTeamMode(!!s.teamMode);
+  setPresenterMode(!!s.presenterMode);
   populateYaminabeGenre(s.yaminabeGenre||'');
 }
 let suggestOn=true;
@@ -2909,6 +2921,22 @@ function setAutoNext(on){
   document.getElementById('autonext-label').textContent=on?'ON':'OFF';
 }
 function toggleAutoNext(){ setAutoNext(!autoNextOn); }
+// ===== 司会モード =====
+// 司会（回答しないホスト）は対戦の開始時に game.presenter に記録する（途中でホストが代わっても回答者が司会にならないように）
+let presenterModeOn=false;
+function setPresenterMode(on){
+  presenterModeOn=on;
+  document.getElementById('presenter-track').classList.toggle('on',on); refreshToggleAria();
+  document.getElementById('presenter-label').textContent=on?'ON':'OFF';
+}
+function togglePresenterMode(){ setPresenterMode(!presenterModeOn); }
+function presenterOf(room){
+  if(!room) return null;
+  if(room.status!=='lobby' && room.game) return room.game.presenter||null;
+  return (room.settings && room.settings.presenterMode) ? room.hostUuid : null;
+}
+function isPresenter(room, uuid){ const pr=presenterOf(room); return !!pr && pr===uuid; }
+function contestants(room){ return Object.values((room&&room.players)||{}).filter(p=>!isPresenter(room, p.uuid)); }
 // ===== チーム戦 =====
 const TEAMS={ red:{ name:'赤', icon:'🔴' }, blue:{ name:'青', icon:'🔵' } };
 let teamModeOn=false;
@@ -2925,19 +2953,21 @@ function pickTeam(t){
   myTeamMemo[id]=t;
   db.ref(`rooms/${id}/players/${getUser().uuid}/team`).set(t).catch(()=>{});
 }
-function teamCounts(room){ const c={ red:0, blue:0 }; Object.values(room.players||{}).forEach(p=>{ if(TEAMS[p.team]) c[p.team]++; }); return c; }
+function teamCounts(room){ const c={ red:0, blue:0 }; contestants(room).forEach(p=>{ if(TEAMS[p.team]) c[p.team]++; }); return c; }
 function smallerTeam(room){ const c=teamCounts(room); return c.red<=c.blue?'red':'blue'; }
 // チームが決まっていない人を、人数が少ない方へ振り分ける（開始時）
-function teamAssignUpdates(room){
-  const ups={}, c=teamCounts(room);
-  Object.values(room.players||{}).filter(p=>!TEAMS[p.team]).sort(()=>Math.random()-0.5).forEach(p=>{
+function teamAssignUpdates(room, presenterUuid){
+  const ups={}, c={ red:0, blue:0 };
+  const ps=Object.values(room.players||{}).filter(p=>p.uuid!==presenterUuid);
+  ps.forEach(p=>{ if(TEAMS[p.team]) c[p.team]++; });
+  ps.filter(p=>!TEAMS[p.team]).sort(()=>Math.random()-0.5).forEach(p=>{
     const t=c.red<=c.blue?'red':'blue'; c[t]++; ups[`rooms/${room.id}/players/${p.uuid}/team`]=t;
   });
   return ups;
 }
 function teamTotals(room){
   const s=(room.game&&room.game.scores)||{}, tot={ red:0, blue:0 };
-  Object.values(room.players||{}).forEach(p=>{ if(TEAMS[p.team]) tot[p.team]+=safeNum(s[p.uuid]); });
+  contestants(room).forEach(p=>{ if(TEAMS[p.team]) tot[p.team]+=safeNum(s[p.uuid]); });
   return tot;
 }
 function winningTeam(room){ const t=teamTotals(room); return t.red>t.blue?'red':t.blue>t.red?'blue':null; }
@@ -3023,6 +3053,7 @@ function saveRoomSettings(){
     autoNext:autoNextOn,
     choiceMode:choiceModeOn,
     teamMode:teamModeOn,
+    presenterMode:presenterModeOn,
     suggestOn
   };
   lsSet(LS.hostSettings, settings);   // 次に部屋を建てたときの初期値にする
@@ -3057,9 +3088,10 @@ function hostStartMatch(){
   }));
   const scores={}; Object.keys(room.players||{}).forEach(u=>scores[u]=0);
   if(choiceModeOn) questions.forEach(q=>{ q.options=makeOptions((q.answers||[])[0], choices); });
-  const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:yaminabeOn, choices, choiceYomi };
+  const presenter=presenterModeOn?getUser().uuid:null;
+  const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:yaminabeOn, choices, choiceYomi, presenter };
   matchLocal={ idx:-1, buzzSent:false, answered:false, myTurn:false, elapsed:null, chorusPlayed:false };
-  const ups={ [`rooms/${id}/status`]:'playing', [`rooms/${id}/game`]:game, ...(teamModeOn?teamAssignUpdates(room):{}) };
+  const ups={ [`rooms/${id}/status`]:'playing', [`rooms/${id}/game`]:game, ...(teamModeOn?teamAssignUpdates(room, presenter):{}) };
   db.ref().update(ups).then(()=>showToast(yaminabeOn?'闇鍋スタート！':'対戦開始！','success'));
 }
 
@@ -3773,6 +3805,7 @@ function renderMatch(id, room){
 
   document.getElementById('match-host-reveal').style.display = isHost ? '' : 'none';
 
+  if(isPresenter(room, me) && !answerer){ buzzBtn.style.display='none'; ansWrap.style.display='none'; waitEl.style.display=''; waitEl.textContent='🎙 司会中（回答はしません）'; }
   if(isHost) maybeHostWatchAnswerer(id, room);
   scheduleBuzzDecide(id, room);
 }
@@ -3806,6 +3839,7 @@ function buzz(){
   const listen=listenActive(room), hostT0=(round.pos||{})[room.hostUuid];
   if(!matchStarted && !(listen && hostT0!=null)){ showToast('再生開始までお待ちください','error'); return; }
   if(round.buzzes && round.buzzes[me]) return;
+  if(isPresenter(room, me)) return;
   if(!isOnline){ showToast('通信が切れているため早押しできません','error'); return; }
   lastBuzzTapAt=performance.now();
   matchLocal.buzzSent=true; matchLocal.claiming=true;
@@ -3860,7 +3894,7 @@ function buzzDecideAt(round, room){
   const best=Math.min(...ids.map(u=>safeNum(bz[u]&&bz[u].e, 9999)));
   let t=open+BUZZ_MARGIN_MS;
   playerIds.forEach(u=>{
-    if(bz[u] || ((round.lockouts||{})[u]||0)>open) return;   // 押した人・ペナルティ中の人は待たない
+    if(bz[u] || ((round.lockouts||{})[u]||0)>open || isPresenter(room, u)) return;   // 押した人・ペナルティ中の人・司会は待たない
     const t0=playerT0(round, room, u); if(t0==null) return;   // まだ再生していない人は待たない
     t=Math.max(t, safeNum(t0)+best*1000+BUZZ_MARGIN_MS);      // この人の再生位置が最短タイムを超える時刻
   });
@@ -4289,9 +4323,10 @@ function hostContinueMatch(excludePlayed){
   }));
   const scores={}; Object.keys(room.players||{}).forEach(u=>scores[u]=(prevGame.scores&&prevGame.scores[u])||0); // 得点引継ぎ
   if(s.choiceMode) questions.forEach(q=>{ q.options=makeOptions((q.answers||[])[0], choices); });
-  const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:!!s.yaminabe, choices, choiceYomi };
+  const presenter=s.presenterMode?room.hostUuid:null;
+  const game={ questions, total:questions.length, current:0, phase:'play', rounds:{}, roundResult:{}, scores, yaminabe:!!s.yaminabe, choices, choiceYomi, presenter };
   matchLocal={ idx:-1, buzzSent:false, answered:false, myTurn:false, elapsed:null, chorusPlayed:false };
-  const ups={ [`rooms/${room.id}/status`]:'playing', [`rooms/${room.id}/game`]:game, ...(isTeamRoom(room)?teamAssignUpdates(room):{}) };
+  const ups={ [`rooms/${room.id}/status`]:'playing', [`rooms/${room.id}/game`]:game, ...(isTeamRoom(room)?teamAssignUpdates(room, presenter):{}) };
   db.ref().update(ups).then(()=>showToast('対戦を続けます！','success'));
 }
 
@@ -4300,7 +4335,7 @@ function hostContinueMatch(excludePlayed){
 let chipPrevScores={}, chipFx={};
 function renderScoreChips(elId, room, subsForRound){
   const me=getUser().uuid;
-  const players=Object.values(room.players||{});
+  const players=contestants(room);
   const scores=room.game?.scores||{};
   const now=Date.now();
   players.forEach(p=>{
@@ -4323,7 +4358,7 @@ function renderScoreChips(elId, room, subsForRound){
 
 function sortedStandings(room){
   const scores=room.game?.scores||{};
-  return Object.values(room.players||{}).map(p=>({ uuid:p.uuid, name:p.name||'?', score:safeNum(scores[p.uuid]) }))
+  return contestants(room).map(p=>({ uuid:p.uuid, name:p.name||'?', score:safeNum(scores[p.uuid]) }))
     .sort((a,b)=>b.score-a.score);
 }
 let finishFxKey='';
@@ -4363,7 +4398,7 @@ function renderAwards(room){
 
 const revealHistory={};   // 部屋ごと・問題ごとの得点（順位の上下の計算用）
 function renderStandings(elId, room, final, prevScores){
-  const players=Object.values(room.players||{});
+  const players=contestants(room);
   const scores=room.game?.scores||{};
   const sorted=[...players].sort((a,b)=>(scores[b.uuid]||0)-(scores[a.uuid]||0));
   const prevRank={};
@@ -4392,6 +4427,7 @@ function recordMyStatsOnce(room){
   if(lastFinishedRoom===statKey) return;
   lastFinishedRoom=statKey;
   const u=getUser();
+  if(isPresenter(room, u.uuid)) return;   // 司会は成績に記録しない
   const scores=room.game?.scores||{};
   const myScore=scores[u.uuid]||0;
   const sorted=Object.entries(scores).sort((a,b)=>b[1]-a[1]);
