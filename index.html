@@ -3097,6 +3097,10 @@ let matchLocal={ idx:-1, buzzSent:false, answered:false, elapsed:null, chorusPla
 let lastFinishedRoom=null;
 // 早押し用
 let matchAudioUnlocked=false;        // 各プレイヤー1回の音声解禁
+let matchAutoUnlockTry=false;        // タップなしで再生を試している（ブロックされたら解禁の画面を出す）
+let matchAutoUnlockTimer=null;
+// このページで一度でもクリック・タップしていれば、多くのブラウザは音付きの再生を許す（部屋に入るときに必ず押している）
+function pageHasUserActivation(){ try{ return !!(navigator.userActivation && navigator.userActivation.hasBeenActive); }catch(e){ return false; } }
 let matchStarted=false, matchEnded=false; // 現問題の再生状態
 let answererTimer=null;              // ホストの回答制限時間（回答者が落ちた時の保険）
 let buzzCountdownInt=null;           // ロックアウトのカウントダウン表示
@@ -3202,6 +3206,19 @@ function loadMatchVideo(videoId){
   applyVolume(matchPlayer);
   document.getElementById('match-elapsed').textContent='経過: 0.00 秒';
   ensureMatchPlayer();
+  if(!matchAudioUnlocked && pageHasUserActivation()){
+    // 解禁の画面を出さずにすぐ再生を試す（1問目の開始が人によって遅れないように）。始まらなければ画面を出す
+    matchAudioUnlocked=true; matchAutoUnlockTry=true; try{ SFX.unlock(); }catch(e){}
+    if(matchAutoUnlockTimer) clearTimeout(matchAutoUnlockTimer);
+    matchAutoUnlockTimer=setTimeout(()=>{
+      matchAutoUnlockTimer=null;
+      if(matchAutoUnlockTry && !matchPlaying && !matchStarted){
+        matchAudioUnlocked=false; matchAutoUnlockTry=false;
+        if(matchWatchdog){ clearTimeout(matchWatchdog); matchWatchdog=null; }   // 「再生が始まりませんでした」は出さない
+        document.getElementById('match-unlock').style.display=''; setAudioCover(false,'タップして音声を有効化');
+      }
+    }, 2500);
+  }
   if(matchAudioUnlocked){ document.getElementById('match-unlock').style.display='none'; autoPlayMatch(); }
   else { document.getElementById('match-unlock').style.display=''; setAudioCover(false,'タップして音声を有効化'); }
 }
@@ -3217,13 +3234,14 @@ function autoPlayMatch(){
 }
 // 各プレイヤー1回の音声解禁ジェスチャ
 function unlockMatchAudio(){
-  matchAudioUnlocked=true;
+  matchAudioUnlocked=true; matchAutoUnlockTry=false;
   SFX.unlock();
   document.getElementById('match-unlock').style.display='none';
   ensureMatchPlayer(()=>{ try{ matchPlayer.playVideo(); }catch(e){} });
   autoPlayMatch();
 }
 function onMatchSongStart(){
+  matchAutoUnlockTry=false; if(matchAutoUnlockTimer){ clearTimeout(matchAutoUnlockTimer); matchAutoUnlockTimer=null; }
   if(matchWatchdog) clearTimeout(matchWatchdog);
   matchStarted=true;
   document.getElementById('match-buzz-btn').style.display='';
