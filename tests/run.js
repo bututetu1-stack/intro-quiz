@@ -43,7 +43,7 @@ const REAL_MIN=128;   // 2026-10-21 時点の正解数。下がったら判定�
 ok(r.n>=REAL_MIN, `曲名判定（実際のタイトル）${r.n}/${real.length}（基準 ${REAL_MIN} 以上）`);
 if(r.n<REAL_MIN || process.argv.includes('-v')) r.ng.forEach(x=>console.log('         '+x));
 const voc=readTsv('song-name-vocaloid.tsv'), v=run(voc);
-const VOC_MIN=79;   // 2026-10-21 時点
+const VOC_MIN=84;   // 2026-10-21 時点
 ok(v.n>=VOC_MIN, `曲名判定（ボカロ・チャンネル名なし）${v.n}/${voc.length}（基準 ${VOC_MIN} 以上）`);
 if(v.n<VOC_MIN || process.argv.includes('-v')) v.ng.forEach(x=>console.log('         '+x));
 const rawSong={ title:'じん / カゲロウデイズ【OFFICIAL MUSIC VIDEO】', answers:['じん / カゲロウデイズ【OFFICIAL MUSIC VIDEO】'] };
