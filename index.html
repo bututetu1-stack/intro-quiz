@@ -194,6 +194,20 @@
   .mode-name { font-family:var(--font-display); font-size:28px; font-weight:700; line-height:1.15; margin-bottom:6px; position:relative; z-index:1; text-shadow:0 2px 0 rgba(0,0,0,0.15); }
   .mode-desc { font-size:13px; font-weight:700; line-height:1.6; position:relative; z-index:1; flex:1; text-shadow:0 1px 3px rgba(0,0,0,0.35); }
   .mode-cta { margin-top:14px; align-self:flex-start; background:#fff; color:#1b1530; font-weight:800; font-size:14px; padding:10px 18px; border-radius:999px; position:relative; z-index:1; box-shadow:0 3px 0 rgba(0,0,0,0.2); }
+  .daily-card { display:flex; align-items:center; gap:16px; margin-top:18px; padding:18px 22px; border-radius:var(--radius-lg); cursor:pointer;
+    background:linear-gradient(115deg, rgba(255,210,63,0.16), rgba(255,93,140,0.10) 55%, rgba(62,197,255,0.12)); border:1px solid rgba(255,210,63,0.45); transition:var(--transition); }
+  .daily-card:hover { border-color:var(--color-accent); box-shadow:0 10px 30px rgba(255,210,63,0.12); }
+  .daily-card[hidden] { display:none; }
+  .daily-card.done { border-color:rgba(52,211,153,0.45); background:linear-gradient(115deg, rgba(52,211,153,0.12), rgba(62,197,255,0.08)); }
+  .daily-icon { font-size:36px; line-height:1; }
+  .daily-body { flex:1; min-width:0; }
+  .daily-eyebrow { font-size:11px; font-weight:800; letter-spacing:2px; color:var(--color-accent); }
+  .daily-card.done .daily-eyebrow { color:var(--color-correct); }
+  .daily-title { font-size:19px; font-weight:900; margin-top:2px; }
+  .daily-desc { font-size:13px; color:var(--color-muted); margin-top:4px; line-height:1.5; }
+  .daily-cta { font-weight:800; color:var(--color-accent); white-space:nowrap; }
+  @media (max-width:560px){ .daily-card { flex-wrap:wrap; padding:16px; gap:12px; } .daily-cta { width:100%; text-align:right; } }
+  .quiz-tag { flex:1; min-width:0; text-align:center; font-size:12px; font-weight:800; color:var(--color-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .quick-join { display:flex; align-items:center; gap:14px; margin-top:18px; padding:16px 18px; background:var(--color-surface); border:1px solid var(--color-border); border-radius:var(--radius-lg); flex-wrap:wrap; }
   .quick-join-label { font-weight:800; font-size:14px; white-space:nowrap; }
   .quick-join-label small { display:block; font-size:11px; color:var(--color-muted); font-weight:500; }
@@ -722,6 +736,16 @@
         </div>
       </div>
     </div>
+    <!-- 今日のチャレンジ（Heardle 風：毎日みんな同じ5曲） -->
+    <div class="daily-card" id="daily-card" role="button" tabindex="0" onclick="startDaily()" hidden>
+      <div class="daily-icon" aria-hidden="true">📅</div>
+      <div class="daily-body">
+        <div class="daily-eyebrow">DAILY CHALLENGE <span id="daily-date"></span></div>
+        <div class="daily-title">今日のチャレンジ</div>
+        <div class="daily-desc" id="daily-desc"></div>
+      </div>
+      <div class="daily-cta" id="daily-cta">挑戦する →</div>
+    </div>
     <!-- 合言葉ですぐ参加（Kahoot・skribbl.io風） -->
     <div class="quick-join">
       <div class="quick-join-label">🔑 合言葉で参加<small>友達から聞いた合言葉・ルームコード</small></div>
@@ -1075,6 +1099,7 @@
   <div class="quiz-container">
     <div class="quiz-topbar">
       <button class="quit-btn" onclick="quitSolo()" title="ソロプレイをやめる">✕ やめる</button>
+      <span class="quiz-tag" id="quiz-tag"></span>
       <span class="key-hint"><kbd>Space</kbd> 再生／一時停止</span>
     </div>
     <div class="quiz-progress">
@@ -1430,7 +1455,7 @@ const YT_API_KEY = "AIzaSyB7OK_8ozVW29QRW7UdfE2IJ86E5yV22B4";
 // グローバル状態
 // ============================================================
 const STATE = { lists: [], rooms: [], users: [], user: null, currentRoomId: null };
-const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest', soloCount: 'iq_solo_count', soloLimit: 'iq_solo_limit', hostSettings: 'iq_host_settings', soloChoice: 'iq_solo_choice', volume: 'iq_volume', muted: 'iq_muted' };
+const LS = { user: 'iq_user', migrated: 'iq_migrated_v3', room: 'iq_room', sfx: 'iq_sfx', soloSuggest: 'iq_solo_suggest', soloCount: 'iq_solo_count', soloLimit: 'iq_solo_limit', hostSettings: 'iq_host_settings', soloChoice: 'iq_solo_choice', volume: 'iq_volume', muted: 'iq_muted', daily: 'iq_daily' };
 
 function lsGet(k, def){ try { return JSON.parse(localStorage.getItem(k)) ?? def; } catch { return def; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
@@ -1505,6 +1530,7 @@ function renderHomeLists(){
   const lists=visibleLists().filter(l=>(l.songs||[]).length>0).sort((a,b)=>(b.songs||[]).length-(a.songs||[]).length).slice(0,4);
   el.innerHTML=lists.length?lists.map(l=>listCardHtml(l,{ onclick:`openListDetail('${safeId(l.id)}')` })).join('')
     :'<div class="empty-list" style="grid-column:1/-1;">まだ曲リストがありません。「曲リスト」から作ってみましょう。</div>';
+  renderDailyCard();
 }
 // ===== 曲リストのカード（曲のサムネをジャケット風に2×2で並べる） =====
 function listCardHtml(l, opts){
@@ -2473,6 +2499,7 @@ function handleStartupJoin(){
   if(startupJoinDone) return; startupJoinDone=true;
   const u=getUser();
   const params=new URLSearchParams(location.search);
+  if(params.has('daily')){ history.replaceState(null,'',location.pathname); startDaily(); return; }
   const code=params.get('room');
   if(code){
     history.replaceState(null,'',location.pathname);
@@ -3663,8 +3690,8 @@ function hostNext(){
 }
 
 // 結果をシェア（スマホは共有シート、PCはクリップボードにコピー）
-function shareText(text){
-  const full=text+'\n'+location.origin+location.pathname;
+function shareText(text, query=''){
+  const full=text+'\n'+location.origin+location.pathname+query;
   if(navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)){ navigator.share({ text:full }).catch(()=>{}); return; }
   if(navigator.clipboard) navigator.clipboard.writeText(full).then(()=>showToast('結果をコピーしました。SNSやLINEに貼り付けてシェアできます','success'),()=>prompt('この文章をコピーしてください', full));
   else prompt('この文章をコピーしてください', full);
@@ -3674,6 +3701,12 @@ function shareSoloResult(){
   const marks=quiz.results.map(r=>r.correct?'🟩':'🟥').join('');
   const times=quiz.results.filter(r=>r.correct && r.time!=null).map(r=>r.time);
   const avg=times.length?(times.reduce((a,b)=>a+b,0)/times.length).toFixed(1):null;
+  if(quiz.daily){
+    // 曲名は書かない（これから遊ぶ人のネタバレにならないように）
+    const streak=dailyStreak();
+    shareText(`🎵 INTRO QUIZ 今日のチャレンジ ${quiz.daily.slice(5).replace('-','/')}\n${quiz.score}/${total} ${marks}${avg?`\n正解の平均 ${avg}秒`:''}${streak>1?`\n🔥 ${streak}日連続`:''}`, '?daily=1');
+    return;
+  }
   shareText(`🎵 INTRO QUIZ ソロ「${list?list.name:'?'}」\n${quiz.score}/${total}問正解 ${marks}${avg?`\n正解の平均 ${avg}秒・最速 ${Math.min(...times).toFixed(2)}秒`:''}`);
 }
 let lastFinishedRoomView=null;
@@ -3970,16 +4003,80 @@ function startSoloQuiz(listId, genreArg){
   let shuffled=[...pool].sort(()=>Math.random()-0.5);
   const count=parseInt(lsGet(LS.soloCount,'10'),10)||0, limit=parseInt(lsGet(LS.soloLimit,'30'),10)||30;
   if(count>0) shuffled=shuffled.slice(0,count);
-  quiz={ songs:shuffled, current:0, score:0, answered:false, buzzed:false, paused:false, results:[], timer:null, listId:lid, genre, limit, streak:0, bestStreak:0, lastTime:null,
-    choiceMode:soloChoiceOn, names:buildChoiceSet(pool).choices, options:null };
-  const cs=soloSuggestOn?buildChoiceSet(pool):{ choices:[], choiceYomi:[] };
-  setSuggestItems('answer-input','solo-suggest', cs.choices, cs.choiceYomi);
+  beginSolo(shuffled, pool, { listId:lid, genre, limit, tag:list.name });
+}
+// songs を出題する。pool は4択・回答候補に使う曲（正解以外の選択肢もここから選ぶ）
+function beginSolo(songs, pool, opts){
+  const set=buildChoiceSet(pool);
+  quiz={ songs, current:0, score:0, answered:false, buzzed:false, paused:false, results:[], timer:null, listId:null, genre:'', limit:30, streak:0, bestStreak:0, lastTime:null,
+    choiceMode:soloChoiceOn, names:set.choices, options:null, daily:null, ...opts };
+  if(soloSuggestOn) setSuggestItems('answer-input','solo-suggest', set.choices, set.choiceYomi);
+  else setSuggestItems('answer-input','solo-suggest', [], []);
+  document.getElementById('quiz-tag').textContent=quiz.tag||'';
   showPage('quiz'); loadQuestion();
+}
+
+// ===== 今日のチャレンジ =====
+// 日本時間の日付ごとに、公開リストの曲からみんな同じ5曲を選ぶ（結果はこの端末に保存）
+const DAILY_COUNT=5;
+function dailyDate(){ return new Date(Date.now()+9*3600e3).toISOString().slice(0,10); }
+function seededRand(str){
+  let h=1779033703^str.length;
+  for(let i=0;i<str.length;i++){ h=Math.imul(h^str.charCodeAt(i),3432918353); h=h<<13|h>>>19; }
+  return ()=>{ h=Math.imul(h^h>>>16,2246822507); h=Math.imul(h^h>>>13,3266489909); h^=h>>>16; return (h>>>0)/4294967296; };
+}
+function dailyPool(){
+  const seen=new Set(), out=[];
+  STATE.lists.filter(l=>l.visibility==='public').forEach(l=>(l.songs||[]).forEach(s=>{
+    const a=(s.answers||[])[0], v=safeId(s.videoId);
+    if(!a || a==='（未設定）' || !v || seen.has(v)) return;
+    if(a===s.title && /[\/｜|【「『(（]/.test(s.title||'')) return;   // 正解が動画タイトルのまま（取り込んだだけ）の曲は出さない
+    seen.add(v); out.push(s);
+  }));
+  return out.sort((x,y)=>x.videoId<y.videoId?-1:x.videoId>y.videoId?1:0);   // リストの並びに左右されないように
+}
+function dailySongs(date){
+  const pool=dailyPool(), a=[...pool], rnd=seededRand('iq-daily:'+date);
+  for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return { songs:a.slice(0,DAILY_COUNT), pool };
+}
+function startDaily(){
+  const date=dailyDate(), { songs, pool }=dailySongs(date);
+  if(songs.length<DAILY_COUNT){ showToast('今日のチャレンジに使える曲が足りません','error'); return; }
+  beginSolo(songs, pool, { daily:date, tag:`📅 今日のチャレンジ（${date.slice(5).replace('-','/')}）` });
+}
+function dailyLog(){ const v=lsGet(LS.daily, {}); return (v && typeof v==='object')?v:{}; }
+// 記録は1日1回（最初に最後まで遊んだ結果）。古い記録は120日分だけ残す
+function recordDaily(avg){
+  const log=dailyLog(); if(log[quiz.daily]) return false;
+  log[quiz.daily]={ score:quiz.score, total:quiz.songs.length, marks:quiz.results.map(r=>r.correct?1:0), avg };
+  const keys=Object.keys(log).sort(); keys.slice(0, Math.max(0, keys.length-120)).forEach(k=>delete log[k]);
+  lsSet(LS.daily, log); return true;
+}
+// 連続で挑戦した日数（今日まだなら昨日までで数える）
+function dailyStreak(){
+  const log=dailyLog(), today=dailyDate(); let n=0;
+  const d=new Date(today+'T00:00:00Z'); if(!log[today]) d.setUTCDate(d.getUTCDate()-1);
+  while(log[d.toISOString().slice(0,10)]){ n++; d.setUTCDate(d.getUTCDate()-1); }
+  return n;
+}
+const dailyMarks=rec=>(rec.marks||[]).map(m=>m?'🟩':'🟥').join('');
+function renderDailyCard(){
+  const card=document.getElementById('daily-card'); if(!card) return;
+  const date=dailyDate(), rec=dailyLog()[date], streak=dailyStreak();
+  card.hidden=dailyPool().length<DAILY_COUNT;
+  document.getElementById('daily-date').textContent=date.slice(5).replace('-','/');
+  const st=streak?` ・ 🔥 ${streak}日連続`:'';
+  document.getElementById('daily-desc').textContent=rec
+    ? `今日の結果 ${safeNum(rec.score)}/${safeNum(rec.total)} ${dailyMarks(rec)}${st}`
+    : `毎日5曲、みんな同じ曲に挑戦。結果をシェアして友達と比べよう${st}`;
+  document.getElementById('daily-cta').textContent=rec?'もう一度遊ぶ →':'挑戦する →';
+  card.classList.toggle('done', !!rec);
 }
 // リストカードの ▶：設定を飛ばしてすぐひとりで遊ぶ
 function quickPlaySolo(listId){ startSoloQuiz(listId, ''); }
 // 結果画面の「もう一度」：同じリスト・ジャンルで出題し直す
-function retrySolo(){ if(quiz && quiz.listId && getList(quiz.listId)) startSoloQuiz(quiz.listId, quiz.genre||''); else showPage('setup'); }
+function retrySolo(){ if(quiz && quiz.daily){ startDaily(); return; } if(quiz && quiz.listId && getList(quiz.listId)) startSoloQuiz(quiz.listId, quiz.genre||''); else showPage('setup'); }
 function loadQuestion(){
   const s=quiz.songs[quiz.current]; const total=quiz.songs.length, idx=quiz.current;
   document.getElementById('progress-text').textContent=`${idx+1} / ${total}`;
@@ -4240,6 +4337,12 @@ function showResult(partial){
     fastest?`<div class="stat-card"><div class="stat-number">${fastest.time.toFixed(2)}<small>秒</small></div><div class="stat-label">最速：${escHtml((fastest.answer||'').split(' / ')[0])}</div></div>`:'',
     quiz.bestStreak>=2?`<div class="stat-card"><div class="stat-number">${quiz.bestStreak}</div><div class="stat-label">最大連続正解</div></div>`:''
   ].join('');
+  if(quiz.daily && !partial){
+    const first=recordDaily(avg), streak=dailyStreak();
+    document.getElementById('result-stats').insertAdjacentHTML('beforeend', `<div class="stat-card"><div class="stat-number">${streak}<small>日</small></div><div class="stat-label">🔥 連続で挑戦</div></div>`);
+    if(!first) showToast('今日のチャレンジの記録は最初の1回だけです（今回は記録されません）');
+    renderDailyCard();
+  }
   if(!partial){
     const best=recordSoloBest(avg);
     if(best && best.better && best.prev) document.getElementById('result-msg').textContent='🎊 自己ベスト更新！ '+msg;

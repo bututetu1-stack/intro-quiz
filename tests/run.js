@@ -4,6 +4,7 @@
 //  - 曲名の自動判定（guessSongName）：手作りの例は全問、実際の YouTube タイトルは基準点以上
 //  - 回答の表記ゆれ吸収（normalize）
 //  - 4択の選択肢（makeOptions）
+//  - 今日のチャレンジの乱数（seededRand）：同じ日付なら同じ並び
 const fs=require('fs'), path=require('path'), vm=require('vm'), cp=require('child_process'), os=require('os');
 const html=fs.readFileSync(path.join(__dirname,'..','index.html'),'utf8');
 let failed=0;
@@ -23,11 +24,11 @@ const fnSrc=(name)=>{ const m=new RegExp('function '+name+'\\([^)]*\\)\\{').exec
   let i=m.index+m[0].length, depth=1; while(depth>0 && i<scripts.length){ const c=scripts[i++]; if(c==='{') depth++; else if(c==='}') depth--; } return scripts.slice(m.index,i); };
 const code=[
   pick('// ===== 曲名の自動判定（YouTubeの動画タイトル','function extractPlaylistId'),
-  fnSrc('normalize'), fnSrc('makeOptions'),
-  'globalThis.__t={ guessSongName, normalize, makeOptions };'
+  fnSrc('normalize'), fnSrc('makeOptions'), fnSrc('seededRand'),
+  'globalThis.__t={ guessSongName, normalize, makeOptions, seededRand };'
 ].join('\n');
 const ctx={}; vm.createContext(ctx); vm.runInContext(code, ctx);
-const { guessSongName, normalize, makeOptions }=ctx.__t;
+const { guessSongName, normalize, makeOptions, seededRand }=ctx.__t;
 
 // 3) 曲名の自動判定
 const readTsv=f=>fs.readFileSync(path.join(__dirname,f),'utf8').split(/\r?\n/).filter(Boolean).map(l=>l.split('\t'));
@@ -51,6 +52,12 @@ const opts=makeOptions('夜に駆ける',['夜に駆ける','よるにかける'
 ok(opts.length===4 && opts.includes('夜に駆ける'), '4択：正解を含む4つ');
 ok(new Set(opts.map(normalize)).size===4, '4択：同じ表記の選択肢を重ねない');
 ok(makeOptions('A',['A']).length===1, '4択：候補が足りなければ少なくなる（画面側で入力欄に切り替える）');
+
+// 6) 今日のチャレンジ
+const seq=s=>{ const r=seededRand(s); return Array.from({length:8},()=>r()); };
+ok(JSON.stringify(seq('iq-daily:2026-10-21'))===JSON.stringify(seq('iq-daily:2026-10-21')), '今日のチャレンジ：同じ日付なら同じ乱数列（全員同じ曲）');
+ok(JSON.stringify(seq('iq-daily:2026-10-21'))!==JSON.stringify(seq('iq-daily:2026-10-22')), '今日のチャレンジ：日付が違えば別の乱数列');
+ok(seq('x').every(v=>v>=0 && v<1), '今日のチャレンジ：乱数は 0 以上 1 未満');
 
 console.log(failed?`\n${failed} 件失敗`:'\nすべて成功');
 process.exit(failed?1:0);
