@@ -2032,8 +2032,9 @@ function applyAutoname(){
 // 例：「ヒグチアイ / 悪魔の子 (アニメスペシャルVer.) | Ai Higuchi “Akuma no Ko” Anime Special Ver.」（チャンネル：ヒグチアイ）
 //   → 曲名「悪魔の子」、別解「Akuma no Ko」
 // 飾りの語（MV・Official Video・Ver. など）。括弧の中身や区切られた部分がこれだけなら捨てる
-const SONG_NOISE_RE=/official|music|video|\bm\/?v\b|\bpv\b|clip|lyrics?|audio|visuali[sz]er|\bver\b\.?|version|remaster(ed)?|\blive\b|\bfull\b|\bshort\b|\btv\b|\bsize\b|4k|\bhd\b|\bhq\b|\d{3,4}p|teaser|trailer|preview|movie|first take|home take|\bfrom\b|anime|\bop\b|\bed\b|opening|ending|special|edition|collaboration|\bsub(bed|s)?\b|\beng\b|creditless|non-?credit|karaoke|instrumental|\binst\b|off vocal|cover(ed)?|remix|\bmix\b|\bedit\b|\bmad\b|\bamv\b|nightcore|slowed|sped up|season|歌詞|公式|字幕|映像|ミュージック|オリジナル|original|フル|ショート|サイズ|ライブ|アニメ|オープニング|エンディング|主題歌|テーマ|ノンクレジット|スペシャル|カバー|コラボ|てみた|カラオケ|付き|付|高音質|第\d+(期|クール|話|弾)|クール/gi;
+const SONG_NOISE_RE=/official|music|video|\bm\/?v\b|\bpv\b|clip|lyrics?|audio|visuali[sz]er|\bver\b\.?|version|remaster(ed)?|\blive\b|\bfull\b|\bshort\b|\blong\b|\btv\b|\bsize\b|4k|\bhd\b|\bhq\b|\d{3,4}p|teaser|trailer|preview|movie|first take|home take|\bfrom\b|anime|\bop\b|\bed\b|opening|ending|special|edition|collaboration|\bsub(bed|s)?\b|\beng\b|creditless|non-?credit|karaoke|instrumental|\binst\b|off vocal|cover(ed)?|remix|\bmix\b|\bedit\b|\bmad\b|\bamv\b|nightcore|slowed|sped up|season|歌詞|公式|字幕|映像|ミュージック|オリジナル|original|フル|ショート|サイズ|ライブ|アニメ|オープニング|エンディング|主題歌|テーマ|ノンクレジット|スペシャル|カバー|コラボ|てみた|カラオケ|付き|付|高音質|第\d+(期|クール|話|弾)|クール/gi;
 const VOCALOID_RE=/初音ミク|鏡音リン|鏡音レン|巡音ルカ|\bMEIKO\b|\bKAITO\b|\bGUMI\b|\bIA\b|可不|重音テト|\bflower\b|結月ゆかり|東北きりたん|星界|裏命|歌愛ユキ|音街ウナ|ずんだもん|琴葉茜|琴葉葵|小春六花|知声|足立レイ/i;
+const VOCALOID_ALL_RE=new RegExp(VOCALOID_RE.source,'gi');
 const COVER_MARK_RE=/covered by|cover(ed)?|カバー|歌ってみた|歌った|うたった|弾いてみた|叩いてみた|踊ってみた/i;
 function songKey(s){ return String(s||'').normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu,''); }
 function isNoisePart(s){ return songKey(String(s||'').replace(SONG_NOISE_RE,' ')).length===0; }
@@ -2081,7 +2082,8 @@ function quotedSongCandidates(s){
     const songBefore=/(主題歌|テーマ|ソング|\bOP|\bED|オープニング|エンディング|挿入歌|新曲|シングル|楽曲|収録曲)\s*$/i.test(before);
     const workBefore=/(アニメ|anime|映画|ドラマ|劇場|ゲーム|番組|CM|TV|テレビ|アルバム|album|作品|シリーズ|舞台|ミュージカル)[^「『｢“"]{0,3}$|×\s*$/i.test(before);
     const workAfter=/^[^「『｢“"]{0,12}?(\bOP\b|\bED\b|オープニング|エンディング|主題歌|テーマ|挿入歌|イメージソング|タイアップ|収録)/i.test(after);
-    out.push({ text:c, start, end, work:!songBefore && (workBefore||workAfter) });
+    const featIn=/\b(feat|ft)\b\.?/i.test(c);
+    out.push({ text:c, start, end, work:!songBefore && !featIn && (workBefore||workAfter) });
   }
   return out;
 }
@@ -2113,8 +2115,16 @@ function guessSongName(rawTitle, channelTitle){
   const core=(text, opts)=>{
     let s=text; const res={ song:'', paren:null, others:[], artistFound:false };
     // 引用符の中を最優先（YouTube Musicの自動生成は曲名そのものなので使わない）
-    const qs=opts.topic?[]:quotedSongCandidates(s); const q=qs.find(x=>!x.work);
-    if(q){ res.song=tidySong(stripFeat(q.text)); return res; }
+    const qs=opts.topic?[]:quotedSongCandidates(s);
+    const inEnglishHalf=(x)=>{ const cut=Math.max(s.lastIndexOf('/',x.start), s.lastIndexOf('／',x.start));
+      return cut>=0 && !hasJapanese(x.text) && hasJapanese(s.slice(0,cut)) && /[A-Za-z]{2,}/.test(s.slice(cut+1,x.start)); };
+    const q=qs.find(x=>!x.work && !inEnglishHalf(x));
+    if(q){
+      const qt=tidySong(stripFeat(q.text)), qp=qt.split(/\s+[\/／]\s+/);
+      if(qp.length===2 && hasJapanese(qp[0])!==hasJapanese(qp[1])){ const jp=hasJapanese(qp[0])?0:1; res.song=tidySong(qp[jp]); res.others=[qp[1-jp]]; }
+      else res.song=qt;
+      return res;
+    }
     for(const w of qs.slice().reverse()) s=s.slice(0,w.start)+' '+s.slice(w.end);   // 作品名の括弧は取り除く
     // 【】[]《》〔〕 はラベルなので取り除く（全部消えたら中身を使う）
     const labels=[]; s=s.replace(/【([^】]*)】|\[([^\]]*)\]|［([^］]*)］|《([^》]*)》|〔([^〕]*)〕/g,(m0,a,b,c,d,e)=>{ labels.push(a||b||c||d||e||''); return ' '; });
@@ -2126,9 +2136,10 @@ function guessSongName(rawTitle, channelTitle){
       if(COVER_MARK_RE.test(c)) return SONG_MARK+' ';
       if(isNoisePart(c) || /feat|ft\.|prod|(19|20)\d\d/i.test(c)) return ' ';
       const rest=str.slice(off+m0.length);
-      if(!rest.trim() || /^\s*(feat\.?|ft\.)/i.test(rest)){
-        if(chMatch(songKey(c))>=2 || /×|&|、/.test(c)) return SONG_MARK+' ';
-        if(!res.paren) res.paren=c.trim(); return ' ';
+      if(!rest.trim() || /^\s*(feat\.?|ft\.)/i.test(rest) || /^\s*([-–—―]\s|[\/／])/.test(rest)){
+        if(chMatch(songKey(c))>=2 || /×|&|、/.test(c) || /([\u3040-\u30ff\u3400-\u9fff]|[a-z])P$/.test(c.trim())) return SONG_MARK+' ';   // 「(くらげP)」も歌手
+        if(!res.paren) res.paren=c.trim();
+        return /^\s/.test(rest)?'':' ';   // 空白が2つ続くと別の部分に分かれてしまうため
       }
       return m0;
     });
@@ -2150,11 +2161,11 @@ function guessSongName(rawTitle, channelTitle){
       if(p.text.includes(SONG_MARK)) sc+=2;
       if(/(\bOP|\bED|opening|ending|主題歌|オープニング|エンディング)\s*\d*$/i.test(p.text)) sc+=2;  // 「デジモンテイマーズOP」は作品名
       if(COVER_MARK_RE.test(p.text) || /vo\.|作詞|作曲|編曲/i.test(p.text)) sc+=2;
-      if(VOCALOID_RE.test(base)) sc+=2;
+      if(VOCALOID_RE.test(base) && songKey(base.replace(VOCALOID_ALL_RE,'')).length<=2) sc+=2;   // 「初音ミク」「GUMI×flower」だけの部分（「初音ミクの消失」は曲名）
       if(keyCount[k]>=2) sc+=2;
       const sepNear=(p.sep||(parts[i+1]&&parts[i+1].sep)||'');
       if(base!==p.text.trim() && sepNear==='/') sc+=2;     // 「曲名 / ○○P feat.初音ミク」の後ろ側
-      if(/[\u3040-\u30ff\u3400-\u9fff]P$/.test(base)) sc+=1; // ○○P（ボカロP）
+      if(/([\u3040-\u30ff\u3400-\u9fff]|[a-z])P[)）]?$/.test(base)) sc+=2; // ○○P（ボカロP）
       if(/\s[x×]\s|×|\s&\s|\swith\s/i.test(base)) sc+=1;    // コラボ表記
       p.score=sc; p.idx=i;
     });
@@ -2202,6 +2213,16 @@ function guessSongName(rawTitle, channelTitle){
   res.others.forEach(addAlt);
   for(const p of pipeParts.slice(1)){ const r=core(p, { split:true }); if(r.song) addAlt(r.song); }
   return { song, alts:alts.slice(0,2) };
+}
+// 正解が動画タイトルのまま（取り込んだだけ）の曲は、出題するときだけ曲名を自動判定して正解にする。
+// リストのデータは書き換えない（作成者は「曲名・よみを自動入力」で直せる）
+function looksRawTitle(s){ const a=(s.answers||[])[0]||''; return a===s.title && /[\/｜|【「『(（]/.test(a); }
+function playableSong(s){
+  if(!looksRawTitle(s)) return s;
+  let g; try{ g=guessSongName(s.title, ''); }catch(e){ return s; }
+  if(!g || !g.song || g.song===s.title) return s;
+  const answers=[...new Set([g.song, ...(g.alts||[])])];
+  return { ...s, answers, autoNamed:true };
 }
 function extractPlaylistId(url){
   const m=url.match(/[?&]list=([A-Za-z0-9_-]+)/);
@@ -2755,7 +2776,7 @@ function hostStartMatch(){
     const genre=document.getElementById('set-genre').value;
     listIds.forEach(lid=>{ const list=getList(lid); if(list) pool.push(...(list.songs||[]).filter(s=>!genre||s.genre===genre)); });
   }
-  pool=pool.filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）');
+  pool=pool.filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）').map(playableSong);
   if(pool.length<1){ showToast('出題できる曲がありません（正解未設定は除外）','error'); return; }
   const { choices, choiceYomi }=buildChoiceSet(pool);
   pool=[...pool].sort(()=>Math.random()-0.5);
@@ -3816,7 +3837,7 @@ function buildPoolFromSettings(s, excludeIds){
     if(!ids.length) return [];
     ids.forEach(lid=>{ const list=getList(lid); if(list) pool.push(...(list.songs||[]).filter(x=>!s.genre||x.genre===s.genre)); });
   }
-  pool=pool.filter(x=>(x.answers||[]).length && x.answers[0]!=='（未設定）');
+  pool=pool.filter(x=>(x.answers||[]).length && x.answers[0]!=='（未設定）').map(playableSong);
   if(excludeIds&&excludeIds.size) pool=pool.filter(x=>!excludeIds.has(x.videoId));
   return pool;
 }
@@ -4033,7 +4054,7 @@ function startSoloQuiz(listId, genreArg){
   const lid=listId||setupSelectedListId;
   const list=getList(lid); if(!list){ showToast('リストを選んでください','error'); return; }
   const genre=(genreArg!=null)?genreArg:document.getElementById('setup-genre').value;
-  let pool=(list.songs||[]).filter(s=>!genre||s.genre===genre).filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）');
+  let pool=(list.songs||[]).filter(s=>!genre||s.genre===genre).filter(s=>(s.answers||[]).length && s.answers[0]!=='（未設定）').map(playableSong);
   if(pool.length===0){ showToast('該当する曲がありません（正解未設定は除外）','error'); return; }
   let shuffled=[...pool].sort(()=>Math.random()-0.5);
   const count=parseInt(lsGet(LS.soloCount,'10'),10)||0, limit=parseInt(lsGet(LS.soloLimit,'30'),10)||30;
@@ -4065,7 +4086,7 @@ function dailyPool(){
   STATE.lists.filter(l=>l.visibility==='public').forEach(l=>(l.songs||[]).forEach(s=>{
     const a=(s.answers||[])[0], v=safeId(s.videoId);
     if(!a || a==='（未設定）' || !v || seen.has(v)) return;
-    if(a===s.title && /[\/｜|【「『(（]/.test(s.title||'')) return;   // 正解が動画タイトルのまま（取り込んだだけ）の曲は出さない
+    if(looksRawTitle(s)) return;   // 正解が動画タイトルのまま（取り込んだだけ）の曲は出さない（自動判定のミスが全員に見えるため）
     seen.add(v); out.push(s);
   }));
   return out.sort((x,y)=>x.videoId<y.videoId?-1:x.videoId>y.videoId?1:0);   // リストの並びに左右されないように
